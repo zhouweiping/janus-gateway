@@ -315,6 +315,9 @@ static struct janus_json_parameter recording_stop_parameters[] = {
 static janus_config *config = NULL;
 static const char *config_folder = NULL;
 static janus_mutex config_mutex;
+static gint64 frameCount =0;
+static gint64 lastRtpPackageReceiveTime;
+static gint32 lastFrameTimestamp;
 
 /* Useful stuff */
 static volatile gint initialized = 0, stopping = 0;
@@ -4108,6 +4111,7 @@ static void *janus_streaming_relay_thread(void *data) {
 						v_base_seq = ntohs(packet.data->seq_number);
 					}
 					v_last_ts = (ntohl(packet.data->timestamp)-v_base_ts)+v_base_ts_prev+4500;	/* FIXME We're assuming 15fps here... */
+//                    v_last_ts = (ntohl(packet.data->timestamp)-v_base_ts)+v_base_ts_prev+9000;	/* FIXME We're assuming 15fps here... */
 					packet.data->timestamp = htonl(v_last_ts);
 					v_last_seq = (ntohs(packet.data->seq_number)-v_base_seq)+v_base_seq_prev+1;
 					packet.data->seq_number = htons(v_last_seq);
@@ -4120,6 +4124,20 @@ static void *janus_streaming_relay_thread(void *data) {
 					packet.timestamp = ntohl(packet.data->timestamp);
 					packet.seq_number = ntohs(packet.data->seq_number);
 					/* Go! */
+//                    gint64 nowtime = janus_get_real_time();
+//                    
+//                    JANUS_PRINT("recv rtp package seq = %ld, timestamp=%u, timestamp-offset=%u, recv_time=%ld, time-offset = %ld\n", packet.seq_number, packet.timestamp, packet.timestamp - lastFrameTimestamp, nowtime, nowtime-lastRtpPackageReceiveTime);
+//                    
+//                    lastRtpPackageReceiveTime = nowtime;
+//
+//                    if(packet.data->markerbit==1)
+//                    {
+//                        frameCount++;
+//                        JANUS_PRINT("recv frame count = %ld, timestamp=%u", frameCount, packet.timestamp);
+//                        lastFrameTimestamp = packet.timestamp;
+//                    }
+//                    
+                    
 					janus_mutex_lock(&mountpoint->mutex);
 					g_list_foreach(mountpoint->listeners, janus_streaming_relay_rtp_packet, &packet);
 					janus_mutex_unlock(&mountpoint->mutex);
