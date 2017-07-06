@@ -315,9 +315,8 @@ static struct janus_json_parameter recording_stop_parameters[] = {
 static janus_config *config = NULL;
 static const char *config_folder = NULL;
 static janus_mutex config_mutex;
-static gint64 frameCount =0;
-static gint64 lastRtpPackageReceiveTime;
-static gint32 lastFrameTimestamp;
+static gint64 lastFrameTimestamp;
+static int keyframe = 0;
 
 /* Useful stuff */
 static volatile gint initialized = 0, stopping = 0;
@@ -4033,6 +4032,26 @@ static void *janus_streaming_relay_thread(void *data) {
 					bytes = recvfrom(video_fd, buffer, 1500, 0, (struct sockaddr*)&remote, &addrlen);
 					//~ JANUS_LOG(LOG_VERB, "************************\nGot %d bytes on the video channel...\n", bytes);
 					rtp_header *rtp = (rtp_header *)buffer;
+                    
+                    keyframe = 0;
+                    if(!keyframe && janus_streaming_is_keyframe(mountpoint->codecs.video_codec, buffer, bytes))
+                    {
+                        keyframe = 1;
+                    }
+                    
+                    gint32 time_offset = ntohl(rtp->timestamp) - lastFrameTimestamp;
+                    
+                    JANUS_PRINT("recv rtp package ssrc= %u , seq = %ld, timestamp=%u, markerbit=%d, timestamp_offset = %.2fms, recv_time = %ld\n", ntohl(rtp->ssrc), ntohs(rtp->seq_number), ntohl(rtp->timestamp), rtp->markerbit, time_offset/90.0, source->last_received_video);
+                    
+                    if(rtp->markerbit==1)
+                    {
+                        JANUS_PRINT("recv a full frame timestamp=%u, keyframe = %d\n", ntohl(rtp->timestamp), keyframe);
+                        keyframe = 0;
+                        lastFrameTimestamp = (gint64)ntohl(rtp->timestamp);
+                    }
+
+                    
+                    
 					/* First of all, let's check if this is (part of) a keyframe that we may need to save it for future reference */
 					if(source->keyframe.enabled) {
 						if(source->keyframe.temp_ts > 0 && ntohl(rtp->timestamp) != source->keyframe.temp_ts) {
@@ -4124,20 +4143,6 @@ static void *janus_streaming_relay_thread(void *data) {
 					packet.timestamp = ntohl(packet.data->timestamp);
 					packet.seq_number = ntohs(packet.data->seq_number);
 					/* Go! */
-//                    gint64 nowtime = janus_get_real_time();
-//                    
-//                    JANUS_PRINT("recv rtp package seq = %ld, timestamp=%u, timestamp-offset=%u, recv_time=%ld, time-offset = %ld\n", packet.seq_number, packet.timestamp, packet.timestamp - lastFrameTimestamp, nowtime, nowtime-lastRtpPackageReceiveTime);
-//                    
-//                    lastRtpPackageReceiveTime = nowtime;
-//
-//                    if(packet.data->markerbit==1)
-//                    {
-//                        frameCount++;
-//                        JANUS_PRINT("recv frame count = %ld, timestamp=%u", frameCount, packet.timestamp);
-//                        lastFrameTimestamp = packet.timestamp;
-//                    }
-//                    
-                    
 					janus_mutex_lock(&mountpoint->mutex);
 					g_list_foreach(mountpoint->listeners, janus_streaming_relay_rtp_packet, &packet);
 					janus_mutex_unlock(&mountpoint->mutex);

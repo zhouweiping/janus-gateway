@@ -52,7 +52,7 @@ static char *janus_turn_server = NULL;
 static uint16_t janus_turn_port = 0;
 static char *janus_turn_user = NULL, *janus_turn_pwd = NULL;
 static NiceRelayType janus_turn_type = NICE_RELAY_TYPE_TURN_UDP;
-static gint64 totalFrameCount = 0;
+static gint32 lastFrameTimestamp = 0;
 
 char *janus_ice_get_turn_server(void) {
 	return janus_turn_server;
@@ -3727,13 +3727,16 @@ void *janus_ice_send_thread(void *data) {
 								component->out_stats.video_packets++;
 								component->out_stats.video_bytes += sent;
 								stream->video_last_ts = timestamp;
-//                                if(header->markerbit==1)
-//                                {
-//                                    totalFrameCount++;
-//                                    JANUS_PRINT("[%"SCNu64"] ... total sent %ld bytes, video packet=%u,  total frame count = %ld, timestamp=%u\n", handle->handle_id, component->out_stats.video_bytes, component->out_stats.video_packets,totalFrameCount, timestamp);
-//                                }
                                 
-							}
+                                
+                                JANUS_PRINT("send rtp package to [%u], seq = %ld, timestamp=%u, markerbit=%d, timestamp_offset = %.2fms\n", header->ssrc,  ntohs(header->seq_number), timestamp, header->markerbit, (timestamp - lastFrameTimestamp)/90.0);
+                                
+                                if(header->markerbit==1)
+                                {
+                                    JANUS_PRINT("send a full frame timestamp=%u\n", timestamp);
+                                    lastFrameTimestamp = timestamp;
+                                }
+                            }
 						}
 						if(max_nack_queue > 0) {
 							/* Save the packet for retransmissions that may be needed later */
