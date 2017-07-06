@@ -315,6 +315,8 @@ static struct janus_json_parameter recording_stop_parameters[] = {
 static janus_config *config = NULL;
 static const char *config_folder = NULL;
 static janus_mutex config_mutex;
+static gint64 lastFrameTimestamp;
+static int keyframe = 0;
 
 /* Useful stuff */
 static volatile gint initialized = 0, stopping = 0;
@@ -4030,6 +4032,26 @@ static void *janus_streaming_relay_thread(void *data) {
 					bytes = recvfrom(video_fd, buffer, 1500, 0, (struct sockaddr*)&remote, &addrlen);
 					//~ JANUS_LOG(LOG_VERB, "************************\nGot %d bytes on the video channel...\n", bytes);
 					rtp_header *rtp = (rtp_header *)buffer;
+                    
+                    keyframe = 0;
+                    if(!keyframe && janus_streaming_is_keyframe(mountpoint->codecs.video_codec, buffer, bytes))
+                    {
+                        keyframe = 1;
+                    }
+                    
+                    gint32 time_offset = ntohl(rtp->timestamp) - lastFrameTimestamp;
+                    
+                    JANUS_PRINT("recv rtp package ssrc= %u , seq = %ld, timestamp=%u, markerbit=%d, timestamp_offset = %.2fms, recv_time = %ld\n", ntohl(rtp->ssrc), ntohs(rtp->seq_number), ntohl(rtp->timestamp), rtp->markerbit, time_offset/90.0, source->last_received_video);
+                    
+                    if(rtp->markerbit==1)
+                    {
+                        JANUS_PRINT("recv a full frame timestamp=%u, keyframe = %d\n", ntohl(rtp->timestamp), keyframe);
+                        keyframe = 0;
+                        lastFrameTimestamp = (gint64)ntohl(rtp->timestamp);
+                    }
+
+                    
+                    
 					/* First of all, let's check if this is (part of) a keyframe that we may need to save it for future reference */
 					if(source->keyframe.enabled) {
 						if(source->keyframe.temp_ts > 0 && ntohl(rtp->timestamp) != source->keyframe.temp_ts) {
@@ -4108,6 +4130,7 @@ static void *janus_streaming_relay_thread(void *data) {
 						v_base_seq = ntohs(packet.data->seq_number);
 					}
 					v_last_ts = (ntohl(packet.data->timestamp)-v_base_ts)+v_base_ts_prev+4500;	/* FIXME We're assuming 15fps here... */
+//                    v_last_ts = (ntohl(packet.data->timestamp)-v_base_ts)+v_base_ts_prev+9000;	/* FIXME We're assuming 15fps here... */
 					packet.data->timestamp = htonl(v_last_ts);
 					v_last_seq = (ntohs(packet.data->seq_number)-v_base_seq)+v_base_seq_prev+1;
 					packet.data->seq_number = htons(v_last_seq);

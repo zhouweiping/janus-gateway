@@ -52,6 +52,7 @@ static char *janus_turn_server = NULL;
 static uint16_t janus_turn_port = 0;
 static char *janus_turn_user = NULL, *janus_turn_pwd = NULL;
 static NiceRelayType janus_turn_type = NICE_RELAY_TYPE_TURN_UDP;
+static gint32 lastFrameTimestamp = 0;
 
 char *janus_ice_get_turn_server(void) {
 	return janus_turn_server;
@@ -242,6 +243,16 @@ gboolean janus_ice_is_ignored(const char *ip) {
 	}
 	janus_mutex_unlock(&ice_list_mutex);
 	return false;
+}
+
+
+/* Frequency of statistics via event handlers (one second by default) */
+static int janus_ice_event_stats_period = 1;
+void janus_ice_set_event_stats_period(int period) {
+	janus_ice_event_stats_period = period;
+}
+int janus_ice_get_event_stats_period(void) {
+	return janus_ice_event_stats_period;
 }
 
 
@@ -3421,7 +3432,7 @@ void *janus_ice_send_thread(void *data) {
 		}
 		/* We tell event handlers once per second about RTCP-related stuff
 		 * FIXME Should we really do this here? Would this slow down this thread and add delay? */
-		if(now-audio_last_event >= G_USEC_PER_SEC) {
+		if(janus_ice_event_stats_period > 0 && now-audio_last_event >= janus_ice_event_stats_period*G_USEC_PER_SEC) {
 			if(janus_events_is_enabled() && janus_flags_is_set(&handle->webrtc_flags, JANUS_ICE_HANDLE_WEBRTC_HAS_AUDIO)) {
 				janus_ice_stream *stream = handle->audio_stream;
 				if(stream && stream->audio_rtcp_ctx) {
@@ -3446,7 +3457,7 @@ void *janus_ice_send_thread(void *data) {
 			}
 			audio_last_event = now;
 		}
-		if(now-video_last_event >= G_USEC_PER_SEC) {
+		if(janus_ice_event_stats_period > 0 && now-video_last_event >= janus_ice_event_stats_period*G_USEC_PER_SEC) {
 			if(janus_events_is_enabled() && janus_flags_is_set(&handle->webrtc_flags, JANUS_ICE_HANDLE_WEBRTC_HAS_VIDEO)) {
 				janus_ice_stream *stream = janus_flags_is_set(&handle->webrtc_flags, JANUS_ICE_HANDLE_WEBRTC_BUNDLE) ? (handle->audio_stream ? handle->audio_stream : handle->video_stream) : (handle->video_stream);
 				if(stream && stream->video_rtcp_ctx) {
@@ -3716,7 +3727,16 @@ void *janus_ice_send_thread(void *data) {
 								component->out_stats.video_packets++;
 								component->out_stats.video_bytes += sent;
 								stream->video_last_ts = timestamp;
-							}
+                                
+                                
+                                JANUS_PRINT("send rtp package to [%u], seq = %ld, timestamp=%u, markerbit=%d, timestamp_offset = %.2fms\n", header->ssrc,  ntohs(header->seq_number), timestamp, header->markerbit, (timestamp - lastFrameTimestamp)/90.0);
+                                
+                                if(header->markerbit==1)
+                                {
+                                    JANUS_PRINT("send a full frame timestamp=%u\n", timestamp);
+                                    lastFrameTimestamp = timestamp;
+                                }
+                            }
 						}
 						if(max_nack_queue > 0) {
 							/* Save the packet for retransmissions that may be needed later */
