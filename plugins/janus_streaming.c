@@ -317,6 +317,8 @@ static const char *config_folder = NULL;
 static janus_mutex config_mutex;
 static gint64 lastFrameTimestamp;
 static int keyframe = 0;
+static gint64 lastFrameTime = 0;
+static gint64 lastPackageTime = 0;
 
 /* Useful stuff */
 static volatile gint initialized = 0, stopping = 0;
@@ -4041,14 +4043,22 @@ static void *janus_streaming_relay_thread(void *data) {
                     
                     gint32 time_offset = ntohl(rtp->timestamp) - lastFrameTimestamp;
                     
-                    JANUS_PRINT("recv rtp package ssrc= %u , seq = %ld, timestamp=%u, markerbit=%d, timestamp_offset = %.2fms, recv_time = %ld\n", ntohl(rtp->ssrc), ntohs(rtp->seq_number), ntohl(rtp->timestamp), rtp->markerbit, time_offset/90.0, source->last_received_video);
                     
                     if(rtp->markerbit==1)
                     {
+                        JANUS_PRINT("recv rtp package ssrc= %u , seq = %ld, timestamp=%u, markerbit=%d, timestamp_offset = %.2fms, recv_time = %ld, recv_package_offset = %.2fms, recv_frame_offset = %.2fms\n", ntohl(rtp->ssrc), ntohs(rtp->seq_number), ntohl(rtp->timestamp), rtp->markerbit, time_offset/90.0f, source->last_received_video, (source->last_received_video - lastPackageTime)/1000.0f, (source->last_received_video - lastFrameTime)/1000.0f);
                         JANUS_PRINT("recv a full frame timestamp=%u, keyframe = %d\n", ntohl(rtp->timestamp), keyframe);
                         keyframe = 0;
                         lastFrameTimestamp = (gint64)ntohl(rtp->timestamp);
+                        lastFrameTime = source->last_received_video;
                     }
+                    else
+                    {
+                        JANUS_PRINT("recv rtp package ssrc= %u , seq = %ld, timestamp=%u, markerbit=%d, timestamp_offset = %.2fms, recv_time = %ld, recv_package_offset = %.2fms\n", ntohl(rtp->ssrc), ntohs(rtp->seq_number), ntohl(rtp->timestamp), rtp->markerbit, time_offset/90.0f, source->last_received_video, (source->last_received_video - lastPackageTime)/1000.0f);
+                    }
+                    
+                    lastPackageTime = source->last_received_video;
+
 
                     
                     
