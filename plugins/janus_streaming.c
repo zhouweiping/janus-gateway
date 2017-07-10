@@ -441,6 +441,7 @@ typedef struct janus_streaming_mountpoint {
 	GList/*<unowned janus_streaming_session>*/ *listeners;
 	gint64 destroyed;
 	janus_mutex mutex;
+    GQueue *queued_packets;
 } janus_streaming_mountpoint;
 GHashTable *mountpoints;
 static GList *old_mountpoints;
@@ -3792,6 +3793,36 @@ static void *janus_streaming_filesource_thread(void *data) {
 	return NULL;
 }
 
+/*
+ * Helper function to compare to given
+ * notifications.
+ negative value if a < b ; zero if a = b ; positive value if a > b
+ */
+int packet_timestamp_cmp(const void *va, const void *vb)
+{
+    
+    janus_streaming_rtp_relay_packet *a = (janus_streaming_rtp_relay_packet *) va;
+    janus_streaming_rtp_relay_packet *b = (janus_streaming_rtp_relay_packet *) vb;
+    if (a->timestamp>b->timestamp) {
+        return 1;
+    }else if (a->timestamp==b->timestamp&&a->seq_number>b->seq_number){
+        return 1;
+    }else if(a->timestamp==b->timestamp&&a->seq_number==b->seq_number){
+        return 0;
+    }else{
+        return -1;
+    }
+}
+
+/*
+ * Wrapper for notification_cmp to match glib's
+ * compare functions signature.
+ */
+int packet_timestamp_cmp_data(const void *va, const void *vb, void *data)
+{
+    return packet_timestamp_cmp(va, vb);
+}
+
 /* FIXME Test thread to relay RTP frames coming from gstreamer/ffmpeg/others */
 static void *janus_streaming_relay_thread(void *data) {
 	JANUS_LOG(LOG_VERB, "Starting streaming relay thread\n");
@@ -4138,6 +4169,15 @@ static void *janus_streaming_relay_thread(void *data) {
 						v_base_ts = ntohl(packet.data->timestamp);
 						v_base_seq_prev = v_last_seq;
 						v_base_seq = ntohs(packet.data->seq_number);
+                        
+                        
+                        if (mountpoint->queued_packets!=NULL) {
+                            g_queue_clear(mountpoint->queued_packets);
+                            
+                        }else{
+                            mountpoint->queued_packets = g_queue_new();
+                        }
+                        
 					}
 					v_last_ts = (ntohl(packet.data->timestamp)-v_base_ts)+v_base_ts_prev+4500;	/* FIXME We're assuming 15fps here... */
 //                    v_last_ts = (ntohl(packet.data->timestamp)-v_base_ts)+v_base_ts_prev+9000;	/* FIXME We're assuming 15fps here... */
@@ -4154,7 +4194,34 @@ static void *janus_streaming_relay_thread(void *data) {
 					packet.seq_number = ntohs(packet.data->seq_number);
 					/* Go! */
 					janus_mutex_lock(&mountpoint->mutex);
-					g_list_foreach(mountpoint->listeners, janus_streaming_relay_rtp_packet, &packet);
+                    
+                    //准备插入的数据
+                    janus_streaming_rtp_relay_packet *pkt = (janus_streaming_rtp_relay_packet *)g_malloc0(sizeof(janus_streaming_rtp_relay_packet));
+                    
+                    memcpy(pkt, &packet, sizeof(janus_streaming_rtp_relay_packet));
+                    //深度拷贝数据
+                    pkt->data = g_malloc0(packet.length);
+                    memcpy(pkt->data, packet.data, packet.length);
+                    pkt->length = packet.length;
+                    
+                    
+                    //插入
+                    g_queue_insert_sorted(mountpoint->queued_packets, pkt, packet_timestamp_cmp_data, NULL);
+                    
+                    if (g_queue_get_length(mountpoint->queued_packets) > 2000) {
+                        //取出数据
+                        pkt = g_queue_pop_head(mountpoint->queued_packets);
+                        
+                        if (pkt!=NULL) {
+                            JANUS_PRINT("pop sort rtp package: seq=%u, timestamp=%u\n", pkt->seq_number, pkt->timestamp);
+                            g_list_foreach(mountpoint->listeners, janus_streaming_relay_rtp_packet, pkt);
+                            if (pkt->data!=NULL) {
+                                g_free(pkt->data);
+                            }
+                            g_free(pkt);
+                        }
+                    }
+                    
 					janus_mutex_unlock(&mountpoint->mutex);
 					continue;
 				} else if(data_fd != -1 && fds[i].fd == data_fd) {
