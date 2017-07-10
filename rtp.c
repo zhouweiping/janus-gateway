@@ -247,8 +247,8 @@ void janus_rtp_header_update(rtp_header *header, janus_rtp_switching_context *co
 		context->v_last_ts = (timestamp-context->v_base_ts) + context->v_base_ts_prev+step;
 		context->v_last_seq = (seq-context->v_base_seq)+context->v_base_seq_prev+1;
 		/* Update the timestamp and sequence number in the RTP packet */
-		header->timestamp = htonl(context->v_last_ts);
-		header->seq_number = htons(context->v_last_seq);
+//		header->timestamp = htonl(context->v_last_ts);
+//		header->seq_number = htons(context->v_last_seq);
 	} else {
 		if(ssrc != context->a_last_ssrc) {
 			/* Audio SSRC changed: update both sequence number and timestamp */

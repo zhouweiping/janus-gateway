@@ -4141,9 +4141,9 @@ static void *janus_streaming_relay_thread(void *data) {
 					}
 					v_last_ts = (ntohl(packet.data->timestamp)-v_base_ts)+v_base_ts_prev+4500;	/* FIXME We're assuming 15fps here... */
 //                    v_last_ts = (ntohl(packet.data->timestamp)-v_base_ts)+v_base_ts_prev+9000;	/* FIXME We're assuming 15fps here... */
-					packet.data->timestamp = htonl(v_last_ts);
+			//		packet.data->timestamp = htonl(v_last_ts);
 					v_last_seq = (ntohs(packet.data->seq_number)-v_base_seq)+v_base_seq_prev+1;
-					packet.data->seq_number = htons(v_last_seq);
+			//		packet.data->seq_number = htons(v_last_seq);
 					//~ JANUS_LOG(LOG_VERB, " ... updated RTP packet (ssrc=%u, pt=%u, seq=%u, ts=%u)...\n",
 						//~ ntohl(rtp->ssrc), rtp->type, ntohs(rtp->seq_number), ntohl(rtp->timestamp));
 					packet.data->type = mountpoint->codecs.video_pt;
