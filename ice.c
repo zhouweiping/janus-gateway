@@ -3893,7 +3893,6 @@ void janus_ice_relay_rtp(janus_ice_handle *handle, int video, char *buf, int len
 //        g_async_queue_push(handle->buffer_queued_packets, pkt);
         g_queue_insert_sorted(handle->buffer_queued_packets, pkt, SortTimestamp, NULL);
         
-        
         if(video)
             buffer_frame_count++;
         
@@ -3908,6 +3907,8 @@ void janus_ice_relay_rtp(janus_ice_handle *handle, int video, char *buf, int len
         janus_ice_queued_packet *pktNew = g_queue_pop_head(handle->buffer_queued_packets);
         if(pktNew!=NULL)
         {
+            rtp_header *header = (rtp_header *)pktNew->data;
+            JANUS_PRINT("place sort rtp package into sent queue: seq = %ld, timestamp=%u, markerbit=%d",  ntohs(header->seq_number), ntohl(header->timestamp), header->markerbit);
             g_async_queue_push(handle->queued_packets, pktNew);
             
         }
