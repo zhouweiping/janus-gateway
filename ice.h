@@ -327,6 +327,7 @@ struct janus_ice_handle {
 	GList *pending_trickles;
 	/*! \brief Queue of outgoing packets to send */
 	GAsyncQueue *queued_packets;
+    GQueue *buffer_queued_packets;
 	/*! \brief GLib thread for sending outgoing packets */
 	GThread *send_thread;
 	/*! \brief Atomic flag to make sure we only create the thread once */

@@ -35,6 +35,11 @@
 #include "ip-utils.h"
 #include "events.h"
 
+
+//buffer queqe
+static bool  bSendPackage = false;
+static int buffer_frame_count = 0;
+
 /* STUN server/port, if any */
 static char *janus_stun_server = NULL;
 static uint16_t janus_stun_port = 0;
@@ -999,6 +1004,7 @@ janus_ice_handle *janus_ice_handle_create(void *gateway_session, const char *opa
 	handle->app = NULL;
 	handle->app_handle = NULL;
 	handle->queued_packets = g_async_queue_new();
+    handle->buffer_queued_packets = g_queue_new();
 	janus_mutex_init(&handle->mutex);
 
 	/* Set up other stuff. */
@@ -3816,6 +3822,55 @@ void *janus_ice_send_thread(void *data) {
 	g_thread_unref(g_thread_self());
 	return NULL;
 }
+                      
+                      
+static gint SortTimestamp(gconstpointer p1, gconstpointer p2)
+{
+    janus_ice_queued_packet *packet1 = (janus_ice_queued_packet *)p1;
+    janus_ice_queued_packet *packet2 = (janus_ice_queued_packet *)p2;
+    gint result = 0;
+        
+    rtp_header *header1;
+    rtp_header *header2;
+        
+    if(packet1!=NULL)
+        header1 = (rtp_header *)packet1->data;
+        
+    if(packet2!=NULL)
+        header2 = (rtp_header *)packet2->data;
+        
+    if(header1!=NULL && header2!=NULL)
+    {
+        gint32 timestamp_diff = ntohl(header1->timestamp) - ntohl(header2->timestamp);
+        if(timestamp_diff==0)
+        {
+            gint16 seq_diff = ntohs(header1->seq_number) - ntohs(header2->seq_number);
+            if(seq_diff==0)
+            {
+                result = 0;
+            }
+            else if(seq_diff>0)
+            {
+                result = 1;
+            }
+            else
+            {
+                result = -1;
+            }
+        }
+        else if(timestamp_diff>0)
+        {
+            result = 1;
+        }
+        else
+        {
+            result = -1;
+        }
+    }
+        
+    return result;
+}
+
 
 void janus_ice_relay_rtp(janus_ice_handle *handle, int video, char *buf, int len) {
 	if(!handle || buf == NULL || len < 1)
@@ -3831,9 +3886,36 @@ void janus_ice_relay_rtp(janus_ice_handle *handle, int video, char *buf, int len
 	pkt->type = video ? JANUS_ICE_PACKET_VIDEO : JANUS_ICE_PACKET_AUDIO;
 	pkt->control = FALSE;
 	pkt->encrypted = FALSE;
-	if(handle->queued_packets != NULL)
-		g_async_queue_push(handle->queued_packets, pkt);
+//	if(handle->queued_packets != NULL)
+//		g_async_queue_push(handle->queued_packets, pkt);
+    if(handle->buffer_queued_packets != NULL)
+    {
+//        g_async_queue_push(handle->buffer_queued_packets, pkt);
+        g_queue_insert_sorted(handle->buffer_queued_packets, pkt, SortTimestamp, NULL);
+        
+        
+        if(video)
+            buffer_frame_count++;
+        
+        if(!bSendPackage && buffer_frame_count>5000)
+        {
+            bSendPackage = true;
+        }
+    }
+    
+    if(bSendPackage)
+    {
+        janus_ice_queued_packet *pktNew = g_queue_pop_head(handle->buffer_queued_packets);
+        if(pktNew!=NULL)
+        {
+            g_async_queue_push(handle->queued_packets, pktNew);
+            
+        }
+    }
+    
 }
+                      
+                      
 
 void janus_ice_relay_rtcp_internal(janus_ice_handle *handle, int video, char *buf, int len, gboolean filter_rtcp) {
 	if(!handle || buf == NULL || len < 1)
