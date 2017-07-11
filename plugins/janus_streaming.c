@@ -4215,10 +4215,10 @@ static void *janus_streaming_relay_thread(void *data) {
                         
                         if (pktNew!=NULL) {
                             seq_number++;
-                            pktNew->seq_number = seq_number;
-                            pktNew->data->seq_number = seq_number;
+                            pktNew->seq_number = ntohs(seq_number);
+                            pktNew->data->seq_number = ntohs(seq_number);
                             rtp_header *rtpNew = (rtp_header *)pktNew->data;
-                            JANUS_PRINT("pop sort rtp package: ssrc=%u, seq=%u, timestamp=%u\n", ntohl(rtpNew->ssrc),pktNew->seq_number, pktNew->timestamp);
+                            JANUS_PRINT("pop sort rtp package: ssrc=%u, seq=%u, timestamp=%u\n", ntohl(rtpNew->ssrc),htons(pktNew->seq_number), pktNew->timestamp);
                             g_list_foreach(mountpoint->listeners, janus_streaming_relay_rtp_packet, pktNew);
                             if (pktNew->data!=NULL) {
                                 g_free(pktNew->data);
