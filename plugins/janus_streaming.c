@@ -319,6 +319,7 @@ static gint64 lastFrameTimestamp;
 static int keyframe = 0;
 static gint64 lastFrameTime = 0;
 static gint64 lastPackageTime = 0;
+static uint16_t seq_number;
 
 /* Useful stuff */
 static volatile gint initialized = 0, stopping = 0;
@@ -4169,7 +4170,7 @@ static void *janus_streaming_relay_thread(void *data) {
 						v_base_ts = ntohl(packet.data->timestamp);
 						v_base_seq_prev = v_last_seq;
 						v_base_seq = ntohs(packet.data->seq_number);
-                        
+                        seq_number = 0;
                         
                         if (mountpoint->queued_packets!=NULL) {
                             g_queue_clear(mountpoint->queued_packets);
@@ -4210,15 +4211,19 @@ static void *janus_streaming_relay_thread(void *data) {
                     
                     if (g_queue_get_length(mountpoint->queued_packets) > 2000) {
                         //取出数据
-                        pkt = g_queue_pop_head(mountpoint->queued_packets);
+                        janus_streaming_rtp_relay_packet * pktNew = g_queue_pop_head(mountpoint->queued_packets);
                         
-                        if (pkt!=NULL) {
-                            JANUS_PRINT("pop sort rtp package: seq=%u, timestamp=%u\n", pkt->seq_number, pkt->timestamp);
-                            g_list_foreach(mountpoint->listeners, janus_streaming_relay_rtp_packet, pkt);
-                            if (pkt->data!=NULL) {
-                                g_free(pkt->data);
+                        if (pktNew!=NULL) {
+                            seq_number++;
+                            pktNew->seq_number = ntohs(seq_number);
+                            pktNew->data->seq_number = ntohs(seq_number);
+                            rtp_header *rtpNew = (rtp_header *)pktNew->data;
+                            JANUS_PRINT("pop sort rtp package: ssrc=%u, seq=%u, timestamp=%u\n", ntohl(rtpNew->ssrc),htons(pktNew->seq_number), pktNew->timestamp);
+                            g_list_foreach(mountpoint->listeners, janus_streaming_relay_rtp_packet, pktNew);
+                            if (pktNew->data!=NULL) {
+                                g_free(pktNew->data);
                             }
-                            g_free(pkt);
+                            g_free(pktNew);
                         }
                     }
                     
