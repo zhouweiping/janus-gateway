@@ -4202,7 +4202,7 @@ static void *janus_streaming_relay_thread(void *data) {
                     
 					/* Go! */
 					janus_mutex_lock(&mountpoint->mutex);
-					
+
                     //准备插入的数据
                     janus_streaming_rtp_relay_packet *pkt = (janus_streaming_rtp_relay_packet *)g_malloc0(sizeof(janus_streaming_rtp_relay_packet));
                     
@@ -4216,6 +4216,7 @@ static void *janus_streaming_relay_thread(void *data) {
 //                    g_queue_push_tail(mountpoint->queued_packets, pkt);
                     //插入
                     g_queue_insert_sorted(mountpoint->queued_packets, pkt, packet_timestamp_cmp_data, NULL);
+                    JANUS_PRINT("openrec----- mountpoint_name=%s, total=%ld, current=%d\n", mountpoint->name, counter,g_queue_get_length(mountpoint->queued_packets));
                     
 //                    if(!shouldSend && g_queue_get_length(mountpoint->queued_packets) > 5000)
 //                    {
@@ -4371,14 +4372,15 @@ static void *janus_buffer_queqe_thread(void *data) {
     if(mountpoint!=NULL)
     {
         int sendCount;
-        while(TRUE)
+        while(!g_atomic_int_get(&stopping) && !mountpoint->destroyed)
         {
             /* Go! */
             janus_mutex_lock(&mountpoint->mutex);
-            
+
             //取出数据
             gint64 now = janus_get_monotonic_time();
             sendCount = 0;
+            
             while(g_queue_get_length(mountpoint->queued_packets)>0)
             {
                 janus_streaming_rtp_relay_packet * pkt = g_queue_peek_head(mountpoint->queued_packets);
@@ -4390,7 +4392,7 @@ static void *janus_buffer_queqe_thread(void *data) {
                     if (pkt!=NULL)
                     {
                         rtp_header *rtpSend = (rtp_header *)pkt->data;
-                        JANUS_PRINT("pop package: ssrc=%u, seq=%u, timestamp=%u, now=%ld, first_package_timestamp=%ld, first_package_time=%ld, buffer_offset = %d\n", ntohl(rtpSend->ssrc), pkt->seq_number, pkt->timestamp, now, firstPackageTimestamp, firstPackageTime, (now - currentPackageRecvtime));
+                        JANUS_PRINT("openrec----- mountpoint_name=%s, pop package: ssrc=%u, seq=%u, timestamp=%u, now=%ld, first_package_timestamp=%ld, first_package_time=%ld, buffer_offset = %d\n", mountpoint->name, ntohl(rtpSend->ssrc), pkt->seq_number, pkt->timestamp, now, firstPackageTimestamp, firstPackageTime, (now - currentPackageRecvtime));
                         g_list_foreach(mountpoint->listeners, janus_streaming_relay_rtp_packet, pkt);
                         if (pkt->data!=NULL)
                         {
@@ -4406,11 +4408,10 @@ static void *janus_buffer_queqe_thread(void *data) {
                 }
             }
             
-            JANUS_PRINT("pop package: send_package_count = %d, left_buffer_queqe_length =%d \n", sendCount, g_queue_get_length(mountpoint->queued_packets));
+            JANUS_PRINT("openrec----- mountpoint_name=%s, send_package_count = %d, left_buffer_queqe_length =%d \n", mountpoint->name, sendCount, g_queue_get_length(mountpoint->queued_packets));
             
-        
             janus_mutex_unlock(&mountpoint->mutex);
-            usleep(5000);
+            usleep(10000);
         }
     }
     
