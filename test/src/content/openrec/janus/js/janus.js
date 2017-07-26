@@ -23,7 +23,7 @@
  */
 
 var scannerId;
-var pc; // pc is handle for selenium-webdriver
+var cpc; // cpc is handle for selenium-webdriver
 
 // List of sessions
 Janus.sessions = {};
@@ -1255,9 +1255,6 @@ function Janus(gatewayCallbacks) {
 		Janus.debug(pc_constraints);
 		config.pc = new RTCPeerConnection(pc_config, pc_constraints);
 		Janus.debug(config.pc);
-		
-		pc = config.pc;  // initialize the handle for selenium-webdriver
-		
 		if(config.pc.getStats) {	// FIXME
 			config.volume.value = 0;
 			config.bitrate.value = "0 kbits/sec";
@@ -1303,8 +1300,9 @@ function Janus(gatewayCallbacks) {
 			Janus.debug(remoteStream);
 			config.remoteStream = remoteStream;
 			pluginHandle.onremotestream(remoteStream.stream);
+			cpc = config.pc;  // initialize the handle for selenium-webdriver
 			scannerId = setInterval(function(){
-					outputStats(config.pc);
+					outputStats(cpc);
 				}, 1000);
 		};
 		// Any data channel to create?
