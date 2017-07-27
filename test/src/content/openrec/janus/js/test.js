@@ -73,32 +73,29 @@ function play_stream_without_action(driver, winName){
                     stats.forEach(function(report) {
                         if (report.type === 'track' && report.kind === 'video') {
                             var currentFrameReceived = report.framesReceived;
+                            var currentFramesDecoded = report.framesDecoded;
                             var currentTime = report.timestamp;
                             if (startTime == 0) {
                                 startTime = currentTime;
                                 firstReceivedFrame = currentFrameReceived;
+                                firstFramesDecoded = currentFramesDecoded;
                             } else {
                                 duration = Math.round((currentTime - startTime) / 1000);
                             }
                             winFrameReceived['framesReceived'] = currentFrameReceived;
+                            winFrameReceived['framesDecoded'] = currentFramesDecoded;
                             winFrameReceived['time'] = duration;
                             if (duration > 0) {
                                 winFrameReceived['receivedFps'] = Math.round((currentFrameReceived - firstReceivedFrame) / duration);
+                                winFrameReceived['decodedFps'] = Math.round((currentFramesDecoded - firstFramesDecoded) / duration);
                             }
                         }
                         if (report.type === 'inbound-rtp' && report.mediaType === 'video') {
                            winFrameReceived['packetsLost'] = report.packetsLost;
                            winFrameReceived['nackCount'] = report.nackCount;
-                           var currentFramesDecoded = report.framesDecoded;
-                           if (startTime == 0) {
-                                firstFramesDecoded = currentFramesDecoded;
-                            }
-                            winFrameReceived['framesDecoded'] = currentFramesDecoded;
-                            if (duration > 0) {
-                                winFrameReceived['decodedFps'] = Math.round((currentFramesDecoded - firstFramesDecoded) / duration);
-                            }
-                        }
 
+                        }
+                        // console.log(winName + ':' + JSON.stringify(report));
             });
             });
                 console.log(winName + ':' + JSON.stringify(winFrameReceived));
