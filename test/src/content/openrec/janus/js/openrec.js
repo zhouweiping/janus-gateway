@@ -210,9 +210,9 @@ function updateStreamsList() {
 				return false;
 
 			});
+			stopStream();
 			$('#watch').removeAttr('disabled').click(startStream);
-            selectedStream = '1';
-            startStream();
+			$('#watch').trigger("click");
 		}
 	}});
 }
