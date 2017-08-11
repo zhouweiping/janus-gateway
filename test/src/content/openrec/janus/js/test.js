@@ -9,21 +9,20 @@ var webdriver = require('selenium-webdriver'),
 var seleniumHelpers = require('webrtc-utilities').seleniumLib;
 
 var openWinMax = 1;      // 测试开启窗口的数量
-var loadWaitMax = 5000;  // 页面加载等待超时上限，5秒
-var printRate = 5000;    // 状态打印频率，5秒
 var reloadTimes = 1;              // 为使视频在页面上显示进行重新加载回数计数
 
-var PAGE_LOAD_TIME = 2000;        // 页面加载预计耗时，1秒
+var PRINT_RATE = 5000;            // 状态打印频率，5秒
 var RELOAD_WAIT = 5000;           // 为使视频在页面上显示进行重新加载的间隔时间
+var LOAD_TIMEOUT = 20000;         // 页面加载等待超时，20秒
+var VIDEO_WAIT = 5000;            // 等待视频显示，5秒
 
 test('Watch the streaming from OPENREC in multi-browser', function(t){
     if (process.env.WIN_COUNT) {
         openWinMax = process.env.WIN_COUNT;
     }
-    loadWaitMax = openWinMax * PAGE_LOAD_TIME;
-    printRate = loadWaitMax + 5000; 
-    console.log('页面加载超时上限：' + loadWaitMax/1000 + '秒');
-    console.log('状态打印频率：' + printRate/1000 + '秒/次');
+
+    console.log('页面加载超时上限：' + LOAD_TIMEOUT/1000 + '秒');
+    console.log('状态打印频率：每' + PRINT_RATE/1000 + '秒1次');
     console.log('浏览器：' + process.env.BROWSER);
 
     // 启动浏览器，并打开指定数量的窗口
@@ -41,6 +40,7 @@ test('Watch the streaming from OPENREC in multi-browser', function(t){
 
     // 使所有窗口打开视频播放页面，如视频未自动播放，则每隔5秒刷新一次页面，直至视频显示
     var readyCount = 0;
+    var hasReadyWins = [];
     driver.wait(function() {
         // console.log('>>> readyCount:' + readyCount + ', openWinMax:' + openWinMax);
 
@@ -49,21 +49,27 @@ test('Watch the streaming from OPENREC in multi-browser', function(t){
             return true;
         } else {
             driver.getAllWindowHandles().then(function(handles) {
-                for (var n = 0; n < handles.length; n++) {
-                    driver.switchTo().window(handles[n]);
-                    driver.manage().timeouts().implicitlyWait(loadWaitMax);
-                    driver.get('file://' + process.cwd() + '/src/content/openrec/janus/index.html')
-                    .then(function(){
-                        return driver.findElement(By.id('video_showing'));
+                handles.forEach(function(handle, index){
+                    if (hasReadyWins[index] == null || !hasReadyWins[index]) {
+                        driver.switchTo().window(handle);
+                        driver.manage().timeouts().implicitlyWait(2000);
+                        driver.get('file://' + process.cwd() + '/src/content/openrec/janus/index.html');
+                        driver.wait(webdriver.until.elementLocated(webdriver.By.id('init_success')), LOAD_TIMEOUT) // 等待进入播放页面
+                        .then(null, function(){
+                            console.log('!!! Failed to launch the page in WIN-' + index);
                     })
+                        driver.wait(webdriver.until.elementLocated(webdriver.By.id('video_showing')), VIDEO_WAIT)  // 等待视频播放
                     .then(function(){
+                            hasReadyWins[index] = true;
                         readyCount = readyCount + 1;
-                        // console.log('### The video stream has been display in page.');
+                            console.log('### The video stream has been displayed in WIN-' + index);
                     })
                     .then(null, function(err){
-                        // console.log('!!! The video stream has not been display in page yet.');
+                            console.log('!!! The video stream has not been displayed in WIN-' + index + ' yet.');
                     });
                 }
+                    
+                });
                 console.log('reloadTimes:' + reloadTimes);
                 reloadTimes = reloadTimes + 1;
                 driver.sleep(RELOAD_WAIT); // 5秒后重新加载页面
@@ -72,17 +78,17 @@ test('Watch the streaming from OPENREC in multi-browser', function(t){
     }
     }, 3600000).then(function(){
         console.log('### Start print the report ...');
-        var wfr = new Map(Object.entries({}));
+
         setInterval(function(){  // 按指定时间间隔，将各个窗口的流状态打印到控制台
             driver.getAllWindowHandles().then(function(handles) {
-            for (var n = 0; n < handles.length; n++) {
-                driver.switchTo().window(handles[n]);
-                var wn = 'WIN-' + n;
+            handles.forEach(function(handle, index){
+                driver.switchTo().window(handle);
+                var wn = 'WIN-' + index;
                 // console.log('### Print the report from ' + wn);
-                printReport(driver, 'cpc', wn, wfr);
-            }
+                printReport(driver, 'cpc', wn);
+            });
         });
-        }, printRate);
+        }, PRINT_RATE);
         
     });
     
@@ -110,7 +116,8 @@ var duration = 0;
 // }
 
 // 输出状态报告
-function printReport(driver, peerConnection, winName, winFrameReceived) {
+function printReport(driver, peerConnection, winName) {
+    var winFrameReceived = new Map(Object.entries({}));
     seleniumHelpers.getStats(driver, peerConnection).then(function(stats){
                     stats.forEach(function(report) {
             if (process.env.BROWSER === 'chrome') {
@@ -151,11 +158,12 @@ function printReport(driver, peerConnection, winName, winFrameReceived) {
                         }
                         // console.log(winName + ':' + JSON.stringify(report));
             });
-            });
+    }).then(function(){
                 console.log(winName + ':' + JSON.stringify(winFrameReceived));
-
     var lastWinName = 'WIN-' + (openWinMax - 1);
                 if (winName === lastWinName) {
                     console.log('---------------------------');
                 }
+    });
+
 }
