@@ -90,6 +90,7 @@ $(document).ready(function() {
 									// Setup streaming session
 									$('#update-streams').click(updateStreamsList);
 									updateStreamsList();
+									$('#video-status').append('<input type="hidden" id="init_success"/>');
 									$('#start').removeAttr('disabled').html("Restart")
 										.click(function() {
 											$(this).attr('disabled', true);
@@ -98,6 +99,7 @@ $(document).ready(function() {
 											$('#watch').attr('disabled', true).unbind('click');
 											$('#start').attr('disabled', true).html("Bye").unbind('click');
 										});
+
 								},
 								error: function(error) {
 									Janus.error("  -- Error attaching plugin... ", error);
@@ -173,7 +175,7 @@ $(document).ready(function() {
 						});
 					},
 					destroyed: function() {
-						window.location.reload();
+						// window.location.reload();
 					}
 				});
 		});
