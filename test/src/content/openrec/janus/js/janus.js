@@ -2290,7 +2290,6 @@ function dumpStats(results) {
         	mediaType = res[k];
         }
         if (k === 'packetsReceived' && res.type === 'inbound-rtp' && mediaType === 'video') {
-        	document.querySelector('div#video-status').innerHTML = '<input type="hidden" id="video_showing"/>';
           currentReceivedVideoPackets = res[k];      	
         	statsString += '=> receivedVideoPackets/s: ' + (currentReceivedVideoPackets - lastReceivedVideoPackets) + '<br>\n';
         	lastReceivedVideoPackets = currentReceivedVideoPackets;

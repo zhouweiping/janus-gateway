@@ -58,17 +58,20 @@ test('Watch the streaming from OPENREC in multi-browser', function(t){
                         .then(null, function(){
                             console.log('!!! Failed to launch the page in WIN-' + index);
                     })
-                        driver.wait(webdriver.until.elementLocated(webdriver.By.id('video_showing')), VIDEO_WAIT)  // 等待视频播放
-                    .then(function(){
+                        driver.sleep(RELOAD_WAIT);
+                        driver.then(function(){ // 等待视频播放
+                            var irvs = isReceivedVideoStream(driver, 'cpc');
+                            irvs.then(function(rs){
+                                if (rs) {
                             hasReadyWins[index] = true;
                         readyCount = readyCount + 1;
                             console.log('### The video stream has been displayed in WIN-' + index);
-                    })
-                    .then(null, function(err){
+                                } else {
                             console.log('!!! The video stream has not been displayed in WIN-' + index + ' yet.');
+                                }
+                            });
                     });
                 }
-                    
                 });
                 console.log('reloadTimes:' + reloadTimes);
                 reloadTimes = reloadTimes + 1;
@@ -103,17 +106,20 @@ var firstReceivedFrame = 0;
 var duration = 0;
 
 // 判断视频流是否进入
-// function hasVideoStream(driver, peerConnection) {
-//     var rvs = false;
-//     seleniumHelpers.getStats(driver, peerConnection).then(function(stats){
-//         stats.forEach(function(report) {
-//             if (report.type === 'inbound-rtp' && report.mediaType === 'video') {
-//                rvs = true;
-//             }
-        //     });
-        //     });
-//     return rvs;
-// }
+function isReceivedVideoStream(driver, peerConnection) {
+    var rvs = false;
+    return seleniumHelpers.getStats(driver, peerConnection)
+       .then(function(stats) {
+           stats.forEach(function(report) {
+               if (report.type === 'inbound-rtp' && report.mediaType === 'video') {
+                   rvs  = true;
+               }
+           });
+       })
+       .then(function(){
+           return rvs;
+       });
+}
 
 // 输出状态报告
 function printReport(driver, peerConnection, winName) {
