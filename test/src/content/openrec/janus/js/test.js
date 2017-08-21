@@ -12,7 +12,7 @@ var openWinMax = 1;      // 测试开启窗口的数量
 var reloadTimes = 1;              // 为使视频在页面上显示进行重新加载回数计数
 
 var PRINT_RATE = 5000;            // 状态打印频率，5秒
-var RELOAD_WAIT = 5000;           // 为使视频在页面上显示进行重新加载的间隔时间
+var RELOAD_WAIT = 1000;           // 为使视频在页面上显示进行重新加载的间隔时间
 var LOAD_TIMEOUT = 20000;         // 页面加载等待超时，20秒
 var VIDEO_WAIT = 5000;            // 等待视频显示，5秒
 
@@ -57,7 +57,7 @@ test('Watch the streaming from OPENREC in multi-browser', function(t){
                         driver.wait(webdriver.until.elementLocated(webdriver.By.id('init_success')), LOAD_TIMEOUT) // 等待进入播放页面
                         .then(null, function(){
                             console.log('!!! Failed to launch the page in WIN-' + index);
-                    })
+                        });
                         driver.sleep(RELOAD_WAIT);
                         driver.then(function(){ // 等待视频播放
                             var irvs = isReceivedVideoStream(driver, 'cpc');
@@ -75,7 +75,7 @@ test('Watch the streaming from OPENREC in multi-browser', function(t){
                 });
                 console.log('reloadTimes:' + reloadTimes);
                 reloadTimes = reloadTimes + 1;
-                driver.sleep(RELOAD_WAIT); // 5秒后重新加载页面
+                driver.sleep(RELOAD_WAIT); // n秒后重新加载页面
             });
             return false;
     }
@@ -86,9 +86,8 @@ test('Watch the streaming from OPENREC in multi-browser', function(t){
             driver.getAllWindowHandles().then(function(handles) {
             handles.forEach(function(handle, index){
                 driver.switchTo().window(handle);
-                var wn = 'WIN-' + index;
                 // console.log('### Print the report from ' + wn);
-                printReport(driver, 'cpc', wn);
+                printReport(driver, 'cpc', index);
             });
         });
         }, PRINT_RATE);
@@ -102,8 +101,9 @@ function open_new_window(driver, t, winName) {
 }
 
 var startTime = 0;
-var firstReceivedFrame = 0;
 var duration = 0;
+var windowsStartTime = [];        // 各个窗口的启动时间
+var windowsFirstReceivedFrame = []; // 各个窗口初次收到的帧数
 
 // 判断视频流是否进入
 function isReceivedVideoStream(driver, peerConnection) {
@@ -122,24 +122,27 @@ function isReceivedVideoStream(driver, peerConnection) {
 }
 
 // 输出状态报告
-function printReport(driver, peerConnection, winName) {
+function printReport(driver, peerConnection, index) {
     var winFrameReceived = new Map(Object.entries({}));
+    var winName = 'WIN-' + index;
     seleniumHelpers.getStats(driver, peerConnection).then(function(stats){
                     stats.forEach(function(report) {
             if (process.env.BROWSER === 'chrome') {
                         if (report.type === 'track' && report.kind === 'video') {
                             var currentFrameReceived = report.framesReceived;
                             var currentTime = report.timestamp;
-                            if (startTime == 0) {
+                    var startTime = windowsStartTime[index];
+                    if (startTime == null || startTime == 0) {
                                 startTime = currentTime;
-                                firstReceivedFrame = currentFrameReceived;
+                        windowsStartTime[index] = startTime;
+                        windowsFirstReceivedFrame[index] = currentFrameReceived;
                             } else {
                                 duration = Math.round((currentTime - startTime) / 1000);
                             }
                             winFrameReceived['framesReceived'] = currentFrameReceived;
                             winFrameReceived['time'] = duration;
                             if (duration > 0) {
-                                winFrameReceived['receivedFps'] = Math.round((currentFrameReceived - firstReceivedFrame) / duration);
+                        winFrameReceived['receivedFps'] = Math.round((currentFrameReceived - windowsFirstReceivedFrame[index]) / duration);
                             }
                         }
                         if (report.type === 'inbound-rtp' && report.mediaType === 'video') {
