@@ -1,0 +1,5 @@
+1. The file "start-chrome-in-centos7.sh" is script used in the node module "travis-multirunner", don't run it directly.
+2. The file "setup-start-chrome.sh" is script to copy the file "start-chrome-in-centos7.sh" to specific folder of node module "travis-multirunner".
+3. The file "setup-start-firefox.sh" is script to extract file "centos7.default.zip" and copy them to profile folder of firefox.
+4. The file "centos7.default.zip" is package of necessary profiles to play video in firefox.
+5. Above four files are for the centOS7, maybe don't work in other platform. 
