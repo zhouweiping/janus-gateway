@@ -26,10 +26,9 @@ test('Watch the streaming from OPENREC in multi-browser', function(t){
     console.log('浏览器：' + process.env.BROWSER);
 
     // 启动浏览器，并打开指定数量的窗口
+    var driver = seleniumHelpers.buildDriver();
     for (var i = 0; i < openWinMax; i++) {
       var winName = 'win' + i;
-      var driver = seleniumHelpers.buildDriver(winName);
-
       if (i == 0) {
         console.log('The window 0 has been opened.');
       } else {
@@ -85,11 +84,11 @@ test('Watch the streaming from OPENREC in multi-browser', function(t){
         setInterval(function(){  // 按指定时间间隔，将各个窗口的流状态打印到控制台
             driver.getAllWindowHandles().then(function(handles) {
             handles.forEach(function(handle, index){
-                driver.switchTo().window(handle);
-                // console.log('### Print the report from ' + wn);
+                    driver.switchTo().window(handle).then(function(){
                 printReport(driver, 'cpc', index);
             });
         });
+            });
         }, PRINT_RATE);
         
     });
