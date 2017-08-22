@@ -1302,7 +1302,8 @@ function Janus(gatewayCallbacks) {
 			pluginHandle.onremotestream(remoteStream.stream);
 			cpc = config.pc;  // initialize the handle for selenium-webdriver
 			scannerId = setInterval(function(){
-					outputStats(cpc);
+			 		// outputStats(cpc);
+			 		outputGoogStats(cpc);
 				}, 1000);
 		};
 		// Any data channel to create?
@@ -2373,4 +2374,30 @@ function outputStats(remotePeerConnection) {
 	} else {
 	  console.log('Not connected yet');
 	}
+}
+
+function outputGoogStats(remotePeerConnection) {
+    var rtcPeerConn = remotePeerConnection; // RTCPeerConnection
+    var receiverStatsDiv = document.querySelector('div#receiverStats');
+    rtcPeerConn.getStats(function callback(connStats){
+        var rtcStatsReports = connStats.result() // array of available status-reports
+        // each status-report object has many status variables, such as
+        // googCurrentDelayMs. You need to iterate over all object and check
+        // their names to find the one status report you want
+        for (var i = 0; i < rtcStatsReports.length; i++) {
+            var statNames = rtcStatsReports[i].names();
+            if (statNames.indexOf('mediaType') && rtcStatsReports[i].stat('mediaType') === 'video') {
+                var logs = '{';
+                logs = logs + 'packetsLost:' + rtcStatsReports[i].stat('packetsLost') + ', ';
+                logs = logs + 'googFrameRateReceived:' + rtcStatsReports[i].stat('googFrameRateReceived') + ', ';
+                logs = logs + 'googFrameRateDecoded:' + rtcStatsReports[i].stat('googFrameRateDecoded') + ', ';
+                logs = logs + 'googFrameRateOutput:' + rtcStatsReports[i].stat('googFrameRateOutput') + ', ';
+                logs = logs + 'googNacksSent:' + rtcStatsReports[i].stat('googNacksSent') + ', ';
+                logs = logs + 'googCurrentDelayMs:' + rtcStatsReports[i].stat('googCurrentDelayMs')
+                logs = logs + '}'
+                receiverStatsDiv.innerHTML = logs;
+            }
+        }
+
+    })
 }
