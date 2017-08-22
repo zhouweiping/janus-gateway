@@ -16,6 +16,8 @@ var RELOAD_WAIT = 1000;           // 为使视频在页面上显示进行重新�
 var LOAD_TIMEOUT = 20000;         // 页面加载等待超时，20秒
 var VIDEO_WAIT = 5000;            // 等待视频显示，5秒
 
+var canPrintReport = true;        // 打印开关
+
 test('Watch the streaming from OPENREC in multi-browser', function(t){
     if (process.env.WIN_COUNT) {
         openWinMax = process.env.WIN_COUNT;
@@ -82,15 +84,17 @@ test('Watch the streaming from OPENREC in multi-browser', function(t){
         console.log('### Start print the report ...');
 
         setInterval(function(){  // 按指定时间间隔，将各个窗口的流状态打印到控制台
+            if (canPrintReport) {
             driver.getAllWindowHandles().then(function(handles) {
+                    canPrintReport = false;  // 锁定打印开关
             handles.forEach(function(handle, index){
                     driver.switchTo().window(handle).then(function(){
                 printReport(driver, 'cpc', index);
             });
         });
             });
+            }
         }, PRINT_RATE);
-        
     });
     
 });
@@ -170,6 +174,7 @@ function printReport(driver, peerConnection, index) {
                 console.log(winName + ':' + JSON.stringify(winFrameReceived));
     var lastWinName = 'WIN-' + (openWinMax - 1);
                 if (winName === lastWinName) {
+            canPrintReport = true;  // 只有当所有窗口都输出了之后，才开启下一轮
                     console.log('---------------------------');
                 }
     });
