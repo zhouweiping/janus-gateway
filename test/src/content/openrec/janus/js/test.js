@@ -85,7 +85,7 @@ test('Watch the streaming from OPENREC in multi-browser', function(t){
                     canPrintReport = false;  // 锁定打印开关
             handles.forEach(function(handle, index){
                     driver.switchTo().window(handle).then(function(){
-                            console.log('### win-' + index + ' SELECTED:' + getCurrentDatetime());
+                            // console.log('### win-' + index + ' SELECTED:' + getCurrentDatetime());
                             printReport(driver, index);
             });
         });
@@ -126,17 +126,19 @@ function printReport(driver, index) {
     driver.then(function(){
         return driver.findElement(By.id('receiverStats'));
     }).then(function(div){
-        console.log('### win-' + index + ' FOUND   :' + getCurrentDatetime());
+        // console.log('### win-' + index + ' FOUND   :' + getCurrentDatetime());
         div.getText().then(function(text){
-            console.log('### win-' + index + ' PRINT   :' + getCurrentDatetime());
+            // console.log('### win-' + index + ' PRINT   :' + getCurrentDatetime());
             console.log('win-'+ index + ':' + text);
+            test = null;
             if (index === (openWinMax - 1)) {
             canPrintReport = true;  // 只有当所有窗口都输出了之后，才开启下一轮
-                    console.log('---------------------------');
+                console.log('---------------------------' + getCurrentDatetime());
                 }
     });
     });
 }
+
 // 取得当前时间
 function getCurrentDatetime() {
     var date = new Date();

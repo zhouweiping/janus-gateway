@@ -2388,6 +2388,7 @@ function outputGoogStats(remotePeerConnection) {
             var statNames = rtcStatsReports[i].names();
             if (statNames.indexOf('mediaType') && rtcStatsReports[i].stat('mediaType') === 'video') {
                 var logs = '{';
+                logs = logs + 'ssrc:' + rtcStatsReports[i].stat('packetsLost') + ', ';
                 logs = logs + 'packetsLost:' + rtcStatsReports[i].stat('packetsLost') + ', ';
                 logs = logs + 'googFrameRateReceived:' + rtcStatsReports[i].stat('googFrameRateReceived') + ', ';
                 logs = logs + 'googFrameRateDecoded:' + rtcStatsReports[i].stat('googFrameRateDecoded') + ', ';
