@@ -14,7 +14,6 @@ var reloadTimes = 1;              // 为使视频在页面上显示进行重新�
 var PRINT_RATE = 5000;            // 状态打印频率，5秒
 var RELOAD_WAIT = 1000;           // 为使视频在页面上显示进行重新加载的间隔时间
 var LOAD_TIMEOUT = 20000;         // 页面加载等待超时，20秒
-var VIDEO_WAIT = 5000;            // 等待视频显示，5秒
 
 var canPrintReport = true;        // 打印开关
 
@@ -89,7 +88,7 @@ test('Watch the streaming from OPENREC in multi-browser', function(t){
                     canPrintReport = false;  // 锁定打印开关
             handles.forEach(function(handle, index){
                     driver.switchTo().window(handle).then(function(){
-                printReport(driver, 'cpc', index);
+                            printReport(driver, index);
             });
         });
             });
@@ -125,58 +124,16 @@ function isReceivedVideoStream(driver, peerConnection) {
 }
 
 // 输出状态报告
-function printReport(driver, peerConnection, index) {
-    var winFrameReceived = new Map(Object.entries({}));
-    var winName = 'WIN-' + index;
-    seleniumHelpers.getStats(driver, peerConnection).then(function(stats){
-                    stats.forEach(function(report) {
-            if (process.env.BROWSER === 'chrome') {
-                        if (report.type === 'track' && report.kind === 'video') {
-                            var currentFrameReceived = report.framesReceived;
-                            var currentTime = report.timestamp;
-                    var startTime = windowsStartTime[index];
-                    if (startTime == null || startTime == 0) {
-                                startTime = currentTime;
-                        windowsStartTime[index] = startTime;
-                        windowsFirstReceivedFrame[index] = currentFrameReceived;
-                            } else {
-                                duration = Math.round((currentTime - startTime) / 1000);
-                            }
-                            winFrameReceived['framesReceived'] = currentFrameReceived;
-                            winFrameReceived['time'] = duration;
-                            if (duration > 0) {
-                        winFrameReceived['receivedFps'] = Math.round((currentFrameReceived - windowsFirstReceivedFrame[index]) / duration);
-                            }
-                        }
-                        if (report.type === 'inbound-rtp' && report.mediaType === 'video') {
-                           winFrameReceived['packetsLost'] = report.packetsLost;
-                           winFrameReceived['nackCount'] = report.nackCount;
-                }
-            }
-            if (process.env.BROWSER === 'firefox') {
-                if (report.type === 'inbound-rtp' && report.mediaType === 'video') {
-                    var currentTime = report.timestamp;
-                    if (startTime == 0) {
-                        startTime = currentTime;
-                    } else {
-                        duration = Math.round((currentTime - startTime) / 1000);
-                    }
-                   winFrameReceived['packetsLost'] = report.packetsLost;
-                   // There is not item named 'nackCount' in Stats information of Firefox
-                   // winFrameReceived['nackCount'] = report.nackCount;
-                   winFrameReceived['time'] = duration;
-                   winFrameReceived['receivedFps'] =  Math.round(report.framerateMean);
-                } 
-                        }
-                        // console.log(winName + ':' + JSON.stringify(report));
-            });
-    }).then(function(){
-                console.log(winName + ':' + JSON.stringify(winFrameReceived));
-    var lastWinName = 'WIN-' + (openWinMax - 1);
-                if (winName === lastWinName) {
+function printReport(driver, index) {
+    driver.then(function(){
+        return driver.findElement(By.id('receiverStats'));
+    }).then(function(div){
+        div.getText().then(function(text){
+            console.log('win-'+ index + ':' + text);
+            if (index === (openWinMax - 1)) {
             canPrintReport = true;  // 只有当所有窗口都输出了之后，才开启下一轮
                     console.log('---------------------------');
                 }
     });
-
+    });
 }
