@@ -2396,6 +2396,7 @@ function outputGoogStats(remotePeerConnection) {
                 logs = logs + 'googCurrentDelayMs:' + rtcStatsReports[i].stat('googCurrentDelayMs')
                 logs = logs + '}'
                 receiverStatsDiv.innerHTML = logs;
+                document.querySelector('div#video-status').innerHTML = '<input type="hidden" id="video_showing"/>';
             }
         }
 

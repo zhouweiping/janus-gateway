@@ -14,6 +14,7 @@ var reloadTimes = 1;              // 为使视频在页面上显示进行重新�
 var PRINT_RATE = 5000;            // 状态打印频率，5秒
 var RELOAD_WAIT = 1000;           // 为使视频在页面上显示进行重新加载的间隔时间
 var LOAD_TIMEOUT = 20000;         // 页面加载等待超时，20秒
+var VIDEO_WAIT = 15000;
 
 var canPrintReport = true;        // 打印开关
 
@@ -54,22 +55,18 @@ test('Watch the streaming from OPENREC in multi-browser', function(t){
                         driver.switchTo().window(handle);
                         driver.manage().timeouts().implicitlyWait(2000);
                         driver.get('file://' + process.cwd() + '/src/content/openrec/janus/index.html');
-                        driver.wait(webdriver.until.elementLocated(webdriver.By.id('init_success')), LOAD_TIMEOUT) // 等待进入播放页面
+                        driver.wait(until.elementLocated(By.id('init_success')), LOAD_TIMEOUT) // 等待进入播放页面
                         .then(null, function(){
                             console.log('!!! Failed to launch the page in WIN-' + index);
                         });
                         driver.sleep(RELOAD_WAIT);
-                        driver.then(function(){ // 等待视频播放
-                            var irvs = isReceivedVideoStream(driver, 'cpc');
-                            irvs.then(function(rs){
-                                if (rs) {
+                        driver.wait(until.elementLocated(By.id('video_showing')), VIDEO_WAIT)  // 等待视频播放
+                        .then(function(){
                             hasReadyWins[index] = true;
                         readyCount = readyCount + 1;
                             console.log('### The video stream has been displayed in WIN-' + index);
-                                } else {
+                        }).then(null, function(){
                             console.log('!!! The video stream has not been displayed in WIN-' + index + ' yet.');
-                                }
-                            });
                     });
                 }
                 });
@@ -88,6 +85,7 @@ test('Watch the streaming from OPENREC in multi-browser', function(t){
                     canPrintReport = false;  // 锁定打印开关
             handles.forEach(function(handle, index){
                     driver.switchTo().window(handle).then(function(){
+                            console.log('### win-' + index + ' SELECTED:' + getCurrentDatetime());
                             printReport(driver, index);
             });
         });
@@ -108,27 +106,29 @@ var windowsStartTime = [];        // 各个窗口的启动时间
 var windowsFirstReceivedFrame = []; // 各个窗口初次收到的帧数
 
 // 判断视频流是否进入
-function isReceivedVideoStream(driver, peerConnection) {
-    var rvs = false;
-    return seleniumHelpers.getStats(driver, peerConnection)
-       .then(function(stats) {
-           stats.forEach(function(report) {
-               if (report.type === 'inbound-rtp' && report.mediaType === 'video') {
-                   rvs  = true;
-               }
-           });
-       })
-       .then(function(){
-           return rvs;
-       });
-}
+// function isReceivedVideoStream(driver, peerConnection) {
+//     var rvs = false;
+//     return seleniumHelpers.getStats(driver, peerConnection)
+//        .then(function(stats) {
+//            stats.forEach(function(report) {
+//                if (report.type === 'inbound-rtp' && report.mediaType === 'video') {
+//                    rvs  = true;
+//                }
+//            });
+//        })
+//        .then(function(){
+//            return rvs;
+//        });
+// }
 
 // 输出状态报告
 function printReport(driver, index) {
     driver.then(function(){
         return driver.findElement(By.id('receiverStats'));
     }).then(function(div){
+        console.log('### win-' + index + ' FOUND   :' + getCurrentDatetime());
         div.getText().then(function(text){
+            console.log('### win-' + index + ' PRINT   :' + getCurrentDatetime());
             console.log('win-'+ index + ':' + text);
             if (index === (openWinMax - 1)) {
             canPrintReport = true;  // 只有当所有窗口都输出了之后，才开启下一轮
@@ -136,4 +136,22 @@ function printReport(driver, index) {
                 }
     });
     });
+}
+// 取得当前时间
+function getCurrentDatetime() {
+    var date = new Date();
+    var seperator1 = "-";
+    var seperator2 = ":";
+    var month = date.getMonth() + 1;
+    var strDate = date.getDate();
+    if (month >= 1 && month <= 9) {
+        month = "0" + month;
+    }
+    if (strDate >= 0 && strDate <= 9) {
+        strDate = "0" + strDate;
+    }
+    var currentdate = date.getFullYear() + seperator1 + month + seperator1 + strDate
+            + " " + date.getHours() + seperator2 + date.getMinutes()
+            + seperator2 + date.getSeconds();
+    return currentdate;
 }
