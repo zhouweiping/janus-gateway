@@ -2394,7 +2394,8 @@ function outputGoogStats(remotePeerConnection) {
                 logs = logs + 'googFrameRateDecoded:' + rtcStatsReports[i].stat('googFrameRateDecoded') + ', ';
                 logs = logs + 'googFrameRateOutput:' + rtcStatsReports[i].stat('googFrameRateOutput') + ', ';
                 logs = logs + 'googNacksSent:' + rtcStatsReports[i].stat('googNacksSent') + ', ';
-                logs = logs + 'googCurrentDelayMs:' + rtcStatsReports[i].stat('googCurrentDelayMs')
+                logs = logs + 'googCurrentDelayMs:' + rtcStatsReports[i].stat('googCurrentDelayMs') + ', ';
+                logs = logs + 'timestamp:' + rtcStatsReports[i].timestamp ;
                 logs = logs + '}'
                 receiverStatsDiv.innerHTML = logs;
                 document.querySelector('div#video-status').innerHTML = '<input type="hidden" id="video_showing"/>';

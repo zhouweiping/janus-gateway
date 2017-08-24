@@ -212,7 +212,6 @@ function updateStreamsList() {
 				return false;
 
 			});
-			stopStream();
 			$('#watch').removeAttr('disabled').click(startStream);
 			$('#watch').trigger("click");
 		}
