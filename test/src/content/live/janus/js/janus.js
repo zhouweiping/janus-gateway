@@ -2390,12 +2390,13 @@ function outputGoogStats(remotePeerConnection) {
                 var logs = '{';
                 logs = logs + 'ssrc:' + rtcStatsReports[i].stat('ssrc') + ', ';
                 logs = logs + 'packetsLost:' + rtcStatsReports[i].stat('packetsLost') + ', ';
+                logs = logs + 'packetsReceived:' + rtcStatsReports[i].stat('packetsReceived') + ', ';
                 logs = logs + 'googFrameRateReceived:' + rtcStatsReports[i].stat('googFrameRateReceived') + ', ';
                 logs = logs + 'googFrameRateDecoded:' + rtcStatsReports[i].stat('googFrameRateDecoded') + ', ';
                 logs = logs + 'googFrameRateOutput:' + rtcStatsReports[i].stat('googFrameRateOutput') + ', ';
                 logs = logs + 'googNacksSent:' + rtcStatsReports[i].stat('googNacksSent') + ', ';
                 logs = logs + 'googCurrentDelayMs:' + rtcStatsReports[i].stat('googCurrentDelayMs') + ', ';
-                logs = logs + 'timestamp:' + rtcStatsReports[i].timestamp ;
+                logs = logs + 'timestamp:' + formatDate(rtcStatsReports[i].timestamp) ;
                 logs = logs + '}'
                 receiverStatsDiv.innerHTML = logs;
                 document.querySelector('div#video-status').innerHTML = '<input type="hidden" id="video_showing"/>';
@@ -2403,4 +2404,14 @@ function outputGoogStats(remotePeerConnection) {
         }
 
     })
+}
+
+function formatDate(dateTime) {
+　　var year = dateTime.getFullYear();
+　　var month = dateTime.getMonth() > 8? (dateTime.getMonth() + 1) : '0' + (dateTime.getMonth() + 1);
+　　var date = dateTime.getDate() > 9? dateTime.getDate() : '0' + dateTime.getDate();
+　　var hour = dateTime.getHours() > 9? dateTime.getHours() : '0' + dateTime.getHours();
+　　var minute = dateTime.getMinutes() > 9? dateTime.getMinutes() : '0' + dateTime.getMinutes();
+　　var second = dateTime.getSeconds() > 9? dateTime.getSeconds() : '0' + dateTime.getSeconds();
+　　return year + "/" + month + "/" + date + " " + hour + ":" + minute + ":" + second;
 }
