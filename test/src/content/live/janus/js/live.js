@@ -42,12 +42,9 @@
 // in the presented order. The first working server will be used for
 // the whole session.
 //
-var server = null;
-if(window.location.protocol === 'http:')
-  //server = "ws://" + window.location.hostname + ":8188/janus";
-	server = "http://" + window.location.hostname + ":8088/janus";
-else
-  server = "https://" + window.location.hostname + ":8089/janus";
+var serverWanIp = "";
+var serverLanIp = "";
+var server = "ws://" + serverWanIp + ":8188";
 
 var janus = null;
 var streaming = null;
@@ -127,6 +124,15 @@ $(document).ready(function() {
 									if(jsep !== undefined && jsep !== null) {
 										Janus.debug("Handling SDP as well...");
 										Janus.debug(jsep);
+
+										// This is a temporary processing which only for the testing. [START]
+										// var strJsep = JSON.stringify(jsep);
+										// var reg = new RegExp(serverLanIp, "g"); 
+										// var strNewJsep = strJsep.replace(reg, serverWanIp);
+										// console.log(JSON.stringify(strNewJsep));
+										// jsep = JSON.parse(strNewJsep);
+										// This is a temporary processing which only for the testing. [END]
+
 										// Answer
 										streaming.createAnswer(
 											{

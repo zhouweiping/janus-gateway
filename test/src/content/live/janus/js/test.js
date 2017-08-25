@@ -54,7 +54,7 @@ test('Watch the streaming from OPENREC in multi-browser', function(t){
                     if (hasReadyWins[index] == null || !hasReadyWins[index]) {
                         driver.switchTo().window(handle);
                         driver.manage().timeouts().implicitlyWait(2000);
-                        driver.get('file://' + process.cwd() + '/src/content/openrec/janus/index.html');
+                        driver.get('file://' + process.cwd() + '/src/content/live/janus/index.html');
                         driver.wait(until.elementLocated(By.id('init_success')), LOAD_TIMEOUT) // 等待进入播放页面
                         .then(null, function(){
                             console.log('!!! Failed to launch the page in WIN-' + index);
