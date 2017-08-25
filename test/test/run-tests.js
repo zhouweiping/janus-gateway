@@ -13,7 +13,7 @@ var test = require('tape');
 // Add all test files here with a short comment.
 
 // Tests basic functionality of the the gum demo.
-require('../src/content/openrec/janus/js/test');
+require('../src/content/live/janus/js/test');
 
 // This is run as a test so it is executed after all tests
 // have completed.
