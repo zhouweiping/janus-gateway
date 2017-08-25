@@ -126,11 +126,11 @@ $(document).ready(function() {
 										Janus.debug(jsep);
 
 										// This is a temporary processing which only for the testing. [START]
-										var strJsep = JSON.stringify(jsep);
-										var reg = new RegExp(serverLanIp, "g"); 
-										var strNewJsep = strJsep.replace(reg, serverWanIp);
+										// var strJsep = JSON.stringify(jsep);
+										// var reg = new RegExp(serverLanIp, "g"); 
+										// var strNewJsep = strJsep.replace(reg, serverWanIp);
 										// console.log(JSON.stringify(strNewJsep));
-										jsep = JSON.parse(strNewJsep);
+										// jsep = JSON.parse(strNewJsep);
 										// This is a temporary processing which only for the testing. [END]
 
 										// Answer
