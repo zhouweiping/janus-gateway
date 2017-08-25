@@ -2390,6 +2390,7 @@ function outputGoogStats(remotePeerConnection) {
                 var logs = '{';
                 logs = logs + 'ssrc:' + rtcStatsReports[i].stat('ssrc') + ', ';
                 logs = logs + 'packetsLost:' + rtcStatsReports[i].stat('packetsLost') + ', ';
+                logs = logs + 'packetsReceived:' + rtcStatsReports[i].stat('packetsReceived') + ', ';
                 logs = logs + 'googFrameRateReceived:' + rtcStatsReports[i].stat('googFrameRateReceived') + ', ';
                 logs = logs + 'googFrameRateDecoded:' + rtcStatsReports[i].stat('googFrameRateDecoded') + ', ';
                 logs = logs + 'googFrameRateOutput:' + rtcStatsReports[i].stat('googFrameRateOutput') + ', ';
