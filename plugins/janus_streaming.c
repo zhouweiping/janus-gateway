@@ -348,6 +348,15 @@ static void *janus_streaming_ondemand_thread(void *data);
 static void *janus_streaming_filesource_thread(void *data);
 static void janus_streaming_relay_rtp_packet(gpointer data, gpointer user_data);
 static void *janus_streaming_relay_thread(void *data);
+static void *janus_buffer_queqe_thread(void *data);
+static gint64 firstPackageTime = 0;
+static gint64 firstPackageTimestamp = 0;
+static gint64 firstAudioPackageTime = 0;
+static gint64 firstAudioPackageTimestamp = 0;
+static gboolean firstReceiveAudio = TRUE;
+static gboolean b_allow_send_audio = FALSE;
+static gint64 videoSendCount = 0;
+static gint64 lastVideotime = 0;
 
 typedef enum janus_streaming_type {
 	janus_streaming_type_none = 0,
@@ -458,6 +467,8 @@ typedef struct janus_streaming_mountpoint {
 	GList/*<unowned janus_streaming_session>*/ *listeners;
 	gint64 destroyed;
 	janus_mutex mutex;
+    GQueue *queued_packets;
+    GQueue *audio_queued_packets;
 } janus_streaming_mountpoint;
 GHashTable *mountpoints;
 static GList *old_mountpoints;
@@ -3286,6 +3297,8 @@ janus_streaming_mountpoint *janus_streaming_create_rtp_source(
 	live_rtp->codecs.video_fmtp = dovideo ? (vfmtp ? g_strdup(vfmtp) : NULL) : NULL;
 	live_rtp->listeners = NULL;
 	live_rtp->destroyed = 0;
+    live_rtp->queued_packets = g_queue_new();
+    live_rtp->audio_queued_packets = g_queue_new();
 	janus_mutex_init(&live_rtp->mutex);
 	g_hash_table_insert(mountpoints, janus_uint64_dup(live_rtp->id), live_rtp);
 	janus_mutex_unlock(&mountpoints_mutex);
@@ -3301,6 +3314,14 @@ janus_streaming_mountpoint *janus_streaming_create_rtp_source(
 		g_free(live_rtp);
 		return NULL;
 	}
+    
+    GError *errorBufferQueqe = NULL;
+    g_thread_try_new("buffer_queqe", &janus_buffer_queqe_thread, live_rtp, &errorBufferQueqe);
+    if(errorBufferQueqe != NULL) {
+        JANUS_LOG(LOG_ERR, "Got error %d (%s) trying to launch the buffer video queqe thread...\n", errorBufferQueqe->code, errorBufferQueqe->message ? errorBufferQueqe->message : "??");
+        return NULL;
+    }
+    
 	return live_rtp;
 }
 
@@ -4050,6 +4071,36 @@ static void *janus_streaming_filesource_thread(void *data) {
 	return NULL;
 }
 
+/*
+ * Helper function to compare to given
+ * notifications.
+ negative value if a < b ; zero if a = b ; positive value if a > b
+ */
+int packet_timestamp_cmp(const void *va, const void *vb)
+{
+    
+    janus_streaming_rtp_relay_packet *a = (janus_streaming_rtp_relay_packet *) va;
+    janus_streaming_rtp_relay_packet *b = (janus_streaming_rtp_relay_packet *) vb;
+    if (a->timestamp>b->timestamp) {
+        return 1;
+    }else if (a->timestamp==b->timestamp&&a->seq_number>b->seq_number){
+        return 1;
+    }else if(a->timestamp==b->timestamp&&a->seq_number==b->seq_number){
+        return 0;
+    }else{
+        return -1;
+    }
+}
+
+/*
+ * Wrapper for notification_cmp to match glib's
+ * compare functions signature.
+ */
+int packet_timestamp_cmp_data(const void *va, const void *vb, void *data)
+{
+    return packet_timestamp_cmp(va, vb);
+}
+
 /* FIXME Test thread to relay RTP frames coming from gstreamer/ffmpeg/others */
 static void *janus_streaming_relay_thread(void *data) {
 	JANUS_LOG(LOG_VERB, "Starting streaming relay thread\n");
@@ -4294,6 +4345,16 @@ static void *janus_streaming_relay_thread(void *data) {
 						a_base_ts = ntohl(packet.data->timestamp);
 						a_base_seq_prev = a_last_seq;
 						a_base_seq = ntohs(packet.data->seq_number);
+                        
+                        firstAudioPackageTime = source->last_received_audio;
+                        firstAudioPackageTimestamp = a_base_seq_prev + 960;
+                        
+                        if (mountpoint->audio_queued_packets!=NULL) {
+                            g_queue_clear(mountpoint->audio_queued_packets);
+                            
+                        }else{
+                            mountpoint->audio_queued_packets = g_queue_new();
+                        }
 					}
 					a_last_ts = (ntohl(packet.data->timestamp)-a_base_ts)+a_base_ts_prev+960;	/* FIXME We're assuming Opus here... */
 					packet.data->timestamp = htonl(a_last_ts);
@@ -4309,7 +4370,37 @@ static void *janus_streaming_relay_thread(void *data) {
 					packet.seq_number = ntohs(packet.data->seq_number);
 					/* Go! */
 					janus_mutex_lock(&mountpoint->mutex);
-					g_list_foreach(mountpoint->listeners, janus_streaming_relay_rtp_packet, &packet);
+                    //准备插入的数据
+                    janus_streaming_rtp_relay_packet *pkt = (janus_streaming_rtp_relay_packet *)g_malloc0(sizeof(janus_streaming_rtp_relay_packet));
+                    
+                    memcpy(pkt, &packet, sizeof(janus_streaming_rtp_relay_packet));
+                    //深度拷贝数据
+                    pkt->data = g_malloc0(packet.length);
+                    memcpy(pkt->data, packet.data, packet.length);
+                    pkt->length = packet.length;
+                    
+                    //插入
+                    g_queue_insert_sorted(mountpoint->audio_queued_packets, pkt, packet_timestamp_cmp_data, NULL);
+                    
+                    if(b_allow_send_audio)
+                    {
+                        janus_streaming_rtp_relay_packet *pktAudio = g_queue_pop_head(mountpoint->audio_queued_packets);
+                        if(pktAudio!=NULL)
+                        {
+                            rtp_header *rtpSendAudio = (rtp_header *)pktAudio->data;
+                            gint64 current_audio_timestamp_offset = pktAudio->timestamp - firstAudioPackageTimestamp;
+                            current_audio_timestamp_offset = (current_audio_timestamp_offset * 1000)/48;
+                            JANUS_PRINT("openrec-----pop audio package: ssrc=%u, seq=%u, timestamp=%u, now=%ld, first_package_timestamp=%ld, first_package_time=%ld, relative_timestamp_offset = %ld\n",  ntohl(rtpSendAudio->ssrc), pktAudio->seq_number, pktAudio->timestamp, now, firstAudioPackageTimestamp, firstAudioPackageTime, current_audio_timestamp_offset);
+                            g_list_foreach(mountpoint->listeners, janus_streaming_relay_rtp_packet, pktAudio);
+                            
+                            if (pktAudio->data!=NULL)
+                            {
+                                g_free(pktAudio->data);
+                            }
+                            g_free(pktAudio);
+                        }
+                        
+                    }
 					janus_mutex_unlock(&mountpoint->mutex);
 					continue;
 				} else if((video_fd[0] != -1 && fds[i].fd == video_fd[0]) ||
@@ -4442,6 +4533,16 @@ static void *janus_streaming_relay_thread(void *data) {
 						v_base_ts[index] = ntohl(packet.data->timestamp);
 						v_base_seq_prev[index] = v_last_seq[index];
 						v_base_seq[index] = ntohs(packet.data->seq_number);
+                        
+                        firstPackageTime = source->last_received_video;
+                        firstPackageTimestamp = v_base_seq_prev[index]+4500;
+                        
+                        if (mountpoint->queued_packets!=NULL) {
+                            g_queue_clear(mountpoint->queued_packets);
+                            
+                        }else{
+                            mountpoint->queued_packets = g_queue_new();
+                        }
 					}
 					v_last_ts[index] = (ntohl(packet.data->timestamp)-v_base_ts[index])+v_base_ts_prev[index]+4500;	/* FIXME We're assuming 15fps here... */
 					packet.data->timestamp = htonl(v_last_ts[index]);
@@ -4458,7 +4559,19 @@ static void *janus_streaming_relay_thread(void *data) {
 					packet.seq_number = ntohs(packet.data->seq_number);
 					/* Go! */
 					janus_mutex_lock(&mountpoint->mutex);
-					g_list_foreach(mountpoint->listeners, janus_streaming_relay_rtp_packet, &packet);
+                    //准备插入的数据
+                    janus_streaming_rtp_relay_packet *pkt = (janus_streaming_rtp_relay_packet *)g_malloc0(sizeof(janus_streaming_rtp_relay_packet));
+                    
+                    memcpy(pkt, &packet, sizeof(janus_streaming_rtp_relay_packet));
+                    //深度拷贝数据
+                    pkt->data = g_malloc0(packet.length);
+                    memcpy(pkt->data, packet.data, packet.length);
+                    pkt->length = packet.length;
+                    
+                    //插入
+                    //                    g_queue_push_tail(mountpoint->queued_packets, pkt);
+                    //插入
+                    g_queue_insert_sorted(mountpoint->queued_packets, pkt, packet_timestamp_cmp_data, NULL);
 					janus_mutex_unlock(&mountpoint->mutex);
 					continue;
 				} else if(data_fd != -1 && fds[i].fd == data_fd) {
@@ -4697,4 +4810,100 @@ static void janus_streaming_relay_rtp_packet(gpointer data, gpointer user_data) 
 	}
 
 	return;
+}
+
+static void *janus_buffer_queqe_thread(void *data)
+{
+    JANUS_LOG(LOG_VERB, "Starting buffer queqe thread\n");
+    janus_streaming_mountpoint *mountpoint = (janus_streaming_mountpoint *)data;
+    if(mountpoint!=NULL)
+    {
+        gint64 send_bytes_per_minute = 0;
+        int bytes_per_ms = 5000 * 1000 / 8 / 1000;
+        int total_add_bytes_per_minute = 0;
+        gint64 send_level = 15*bytes_per_ms;
+        gint64 last_send_time;
+        gboolean first_packet = TRUE;
+        while(!g_atomic_int_get(&stopping) && !mountpoint->destroyed)
+        {
+            /* Go! */
+            janus_mutex_lock(&mountpoint->mutex);
+            //取出数据
+            gint64 now = janus_get_monotonic_time();
+            gint64 video_timestamp_offset = 0;
+            
+            if(g_queue_get_length(mountpoint->queued_packets)>0)
+            {
+                janus_streaming_rtp_relay_packet * pkt = g_queue_peek_head(mountpoint->queued_packets);
+                video_timestamp_offset = pkt->timestamp - firstPackageTimestamp;
+                video_timestamp_offset = (video_timestamp_offset * 1000)/90;
+                gint64 currentPackageRecvtime = firstPackageTime + video_timestamp_offset;
+                if(now - currentPackageRecvtime>500000)
+                {
+                    if(!b_allow_send_audio)
+                        b_allow_send_audio = TRUE;
+                    
+                    
+                    if(pkt!=NULL)
+                    {
+                        if(first_packet)
+                        {
+                            last_send_time = janus_get_monotonic_time();
+                            first_packet = FALSE;
+                        }
+                        pkt = g_queue_pop_head(mountpoint->queued_packets);
+                        rtp_header *rtpSend = (rtp_header *)pkt->data;
+                        gint64 current_send_time = janus_get_monotonic_time();
+                        gint64 cueernt_add_bytes = (current_send_time - last_send_time)*bytes_per_ms/1000;
+                        send_level += cueernt_add_bytes;
+                        total_add_bytes_per_minute += cueernt_add_bytes;
+                        last_send_time = current_send_time;
+                        while(1)
+                        {
+                            if(send_level<=0)
+                            {
+                                int sleep_time = (1492/bytes_per_ms + 1)*1000;
+                                usleep(sleep_time);
+                                gint64 current_send_time = janus_get_monotonic_time();
+                                gint64 cueernt_sleep_add_bytes = (current_send_time - last_send_time)*bytes_per_ms/1000;
+                                send_level += cueernt_sleep_add_bytes;
+                                total_add_bytes_per_minute += cueernt_sleep_add_bytes;
+                                last_send_time = current_send_time;
+                            }
+                            
+                            if(send_level>0)
+                            {
+                                send_level -= pkt->length;
+                                g_list_foreach(mountpoint->listeners, janus_streaming_relay_rtp_packet, pkt);
+                                send_bytes_per_minute += pkt->length;
+                                videoSendCount++;
+                                if (pkt->data!=NULL)
+                                {
+                                    g_free(pkt->data);
+                                }
+                                g_free(pkt);
+                                JANUS_PRINT("openrec-----pop video package: free space\n");
+                                break;
+                            }
+                            
+                        }
+                        
+                    }
+                }
+            }
+            
+            gint64 now1 = janus_get_monotonic_time();
+            if(now1 - lastVideotime>60000000)
+            {
+                JANUS_PRINT("openrec-----flow control  time_offset=%ld, send_package_count = %d, send_bytes_per_minute = %ld, total_add_bytes_per_minute = %ld\n", (now1 - lastVideotime), videoSendCount, send_bytes_per_minute, total_add_bytes_per_minute);
+                videoSendCount = 0;
+                send_bytes_per_minute = 0;
+                total_add_bytes_per_minute = 0;
+                lastVideotime = now1;
+            }
+            
+            janus_mutex_unlock(&mountpoint->mutex);
+            usleep(500);
+        }
+    }
 }
