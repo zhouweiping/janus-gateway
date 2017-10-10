@@ -4208,7 +4208,6 @@ static void janus_streaming_rtp_forwarder_process(janus_streaming_rtp_relay_pack
     }
         
     int i;
-    JANUS_LOG(LOG_HUGE, "rtp_forwarder %s begin--------\n", packet->is_video? "video" :"audio");
     for(i=0;i<g_list_length(mp->rtp_forwarder_listeners);i++)
     {
         janus_streaming_rtp_forwarder *forwarder = g_list_nth_data(mp->rtp_forwarder_listeners, i);
@@ -4219,18 +4218,11 @@ static void janus_streaming_rtp_forwarder_process(janus_streaming_rtp_relay_pack
             {
                 if(sendto(forwarder->udp_sock, (char *)packet->data, packet->length, 0, (struct sockaddr*)&forwarder->serv_addr, sizeof(forwarder->serv_addr)) < 0)
                 {
-                    //              JANUS_LOG(LOG_HUGE, "Error forwarding RTP video packet for %s... %s (len=%d)...\n",
-                    //                        participant->display, strerror(errno), packet->length);
-                }
-                else
-                {
-                    JANUS_LOG(LOG_HUGE, "rtp_forwarder %s to %s:%d\n", packet->is_video? "video" :"audio",
-                              inet_ntoa(forwarder->serv_addr.sin_addr), ntohs(forwarder->serv_addr.sin_port));
+                    JANUS_LOG(LOG_HUGE, "Error forwarding RTP %s to %s:%d packet for ... %s (len=%d)...\n", packet->is_video? "video" :"audio", inet_ntoa(forwarder->serv_addr.sin_addr), ntohs(forwarder->serv_addr.sin_port), strerror(errno), packet->length);
                 }
             }
         }
     }
-    JANUS_LOG(LOG_HUGE, "rtp_forwarder %s end--------\n",  packet->is_video? "video" :"audio");
 }
 
 /* FIXME Test thread to relay RTP frames coming from gstreamer/ffmpeg/others */
