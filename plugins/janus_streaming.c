@@ -371,6 +371,11 @@ typedef struct janus_streaming_rtp_keyframe {
 	janus_mutex mutex;
 } janus_streaming_rtp_keyframe;
 
+typedef struct ping_pkt_t{
+    uint32_t header;
+    struct timeval xmit_time;
+}ping_pkt_t;
+
 #ifdef HAVE_LIBCURL
 typedef struct janus_streaming_buffer {
 	char *buffer;
