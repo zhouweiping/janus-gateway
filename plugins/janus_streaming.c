@@ -480,6 +480,7 @@ static GList *old_mountpoints;
 janus_mutex mountpoints_mutex;
 static char *admin_key = NULL;
 
+int add_rtp_forwarder_body(janus_streaming_mountpoint *mp, const gchar* host, int port, gboolean is_video);
 static void janus_streaming_mountpoint_free(janus_streaming_mountpoint *mp);
 
 /* Helper to create an RTP live source (e.g., from gstreamer/ffmpeg/vlc/etc.) */
@@ -2481,7 +2482,7 @@ struct janus_plugin_result *janus_streaming_handle_message(janus_plugin_session 
         json_object_set_new(response, "ack", json_string("broadcast successful"));
         goto plugin_response;
     }
-    else if(!strcasecmp(request_text, "watch-udp")) {
+    else if(!strcasecmp(request_text, "rtp_broadcast")) {
         json_t *id = json_object_get(root, "id");
         if(!id) {
             JANUS_LOG(LOG_ERR, "Missing element (id)\n");
@@ -4371,6 +4372,35 @@ static void *janus_streaming_filesource_thread(void *data) {
 	g_thread_unref(g_thread_self());
 	return NULL;
 }
+        
+static void janus_streaming_rtp_forwarder_process(janus_streaming_rtp_relay_packet *packet, janus_streaming_mountpoint *mp)
+{
+    if(!packet || !packet->data || packet->length < 1) {
+        JANUS_LOG(LOG_ERR, "Invalid packet...\n");
+        return;
+    }
+            
+    if(!mp && !mp->rtp_forwarder_listeners) {
+        return;
+    }
+            
+    int i;
+    for(i=0;i<g_list_length(mp->rtp_forwarder_listeners);i++)
+    {
+        janus_streaming_rtp_forwarder *forwarder = g_list_nth_data(mp->rtp_forwarder_listeners, i);
+        //如果是视频包就只发送到视频的端口 是音频包就只发到音频的端口
+        if(forwarder!=NULL)
+        {
+            if(packet->is_video==forwarder->is_video)
+            {
+                if(sendto(forwarder->udp_sock, (char *)packet->data, packet->length, 0, (struct sockaddr*)&forwarder->serv_addr, sizeof(forwarder->serv_addr)) < 0)
+                {
+                    JANUS_LOG(LOG_HUGE, "Error forwarding RTP %s to %s:%d packet for ... %s (len=%d)...\n", packet->is_video? "video" :"audio", inet_ntoa(forwarder->serv_addr.sin_addr), ntohs(forwarder->serv_addr.sin_port), strerror(errno), packet->length);
+                }
+            }
+        }
+    }
+}
 
 /* FIXME Test thread to relay RTP frames coming from gstreamer/ffmpeg/others */
 static void *janus_streaming_relay_thread(void *data) {
@@ -4632,6 +4662,7 @@ static void *janus_streaming_relay_thread(void *data) {
 					/* Go! */
 					janus_mutex_lock(&mountpoint->mutex);
 					g_list_foreach(mountpoint->listeners, janus_streaming_relay_rtp_packet, &packet);
+                    janus_streaming_rtp_forwarder_process(&packet, mountpoint);
 					janus_mutex_unlock(&mountpoint->mutex);
 					continue;
 				} else if((video_fd[0] != -1 && fds[i].fd == video_fd[0]) ||
@@ -4781,6 +4812,7 @@ static void *janus_streaming_relay_thread(void *data) {
 					/* Go! */
 					janus_mutex_lock(&mountpoint->mutex);
 					g_list_foreach(mountpoint->listeners, janus_streaming_relay_rtp_packet, &packet);
+                    janus_streaming_rtp_forwarder_process(&packet, mountpoint);
 					janus_mutex_unlock(&mountpoint->mutex);
 					continue;
 				} else if(data_fd != -1 && fds[i].fd == data_fd) {
@@ -5019,4 +5051,28 @@ static void janus_streaming_relay_rtp_packet(gpointer data, gpointer user_data) 
 	}
 
 	return;
+}
+        
+        
+int add_rtp_forwarder_body(janus_streaming_mountpoint *mp, const gchar* host, int port, gboolean is_video)
+{
+    /* Check if we have udp relays to begin with */
+    if (!mp || !host)
+        return -1;
+            
+    janus_streaming_rtp_forwarder *forwarder = g_malloc0(sizeof(janus_streaming_rtp_forwarder));
+    forwarder->is_video = is_video;
+    forwarder->serv_addr.sin_family = AF_INET;
+    inet_pton(AF_INET, host, &(forwarder->serv_addr.sin_addr));
+    forwarder->serv_addr.sin_port = htons(port);
+    if((forwarder->udp_sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP))== -1)
+    {
+        JANUS_LOG(LOG_ERR, "UDP:Relay: cannot create socket! Reason: %s\n", strerror(errno));
+        return -1;
+    }
+    janus_mutex_lock(&mp->mutex);
+    mp->rtp_forwarder_listeners = g_list_append(mp->rtp_forwarder_listeners, forwarder);
+    janus_mutex_unlock(&mp->mutex);
+            
+    return 0;
 }
