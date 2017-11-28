@@ -445,6 +445,16 @@ typedef struct janus_streaming_codecs {
 	char *video_fmtp;
 } janus_streaming_codecs;
 
+typedef struct janus_streaming_rtp_forwarder{
+    gboolean is_video;
+    gboolean is_data;
+    uint32_t ssrc;
+    int payload_type;
+    int substream;
+    struct sockaddr_in serv_addr;
+    int udp_sock;
+} janus_streaming_rtp_forwarder;
+
 typedef struct janus_streaming_mountpoint {
 	guint64 id;
 	char *name;
@@ -461,6 +471,7 @@ typedef struct janus_streaming_mountpoint {
 	janus_streaming_codecs codecs;
 	gboolean audio, video, data;
 	GList/*<unowned janus_streaming_session>*/ *listeners;
+    GList/*<janus_streaming_rtp_forwarder>*/ *rtp_forwarder_listeners;     //broadcast add
 	gint64 destroyed;
 	janus_mutex mutex;
 } janus_streaming_mountpoint;
@@ -2284,7 +2295,312 @@ struct janus_plugin_result *janus_streaming_handle_message(janus_plugin_session 
 		response = json_object();
 		json_object_set_new(response, "streaming", json_string("ok"));
 		goto plugin_response;
-	} else if(!strcasecmp(request_text, "watch") || !strcasecmp(request_text, "start")
+    }
+    else if(!strcasecmp(request_text, "enable") || !strcasecmp(request_text, "disable")) {
+        /* A request to enable/disable a mountpoint */
+        JANUS_VALIDATE_JSON_OBJECT(root, id_parameters,
+                                   error_code, error_cause, TRUE,
+                                   JANUS_STREAMING_ERROR_MISSING_ELEMENT, JANUS_STREAMING_ERROR_INVALID_ELEMENT);
+        if(error_code != 0)
+            goto plugin_response;
+        json_t *id = json_object_get(root, "id");
+        guint64 id_value = json_integer_value(id);
+        janus_mutex_lock(&mountpoints_mutex);
+        janus_streaming_mountpoint *mp = g_hash_table_lookup(mountpoints, &id_value);
+        if(mp == NULL) {
+            janus_mutex_unlock(&mountpoints_mutex);
+            JANUS_LOG(LOG_VERB, "No such mountpoint/stream %"SCNu64"\n", id_value);
+            error_code = JANUS_STREAMING_ERROR_NO_SUCH_MOUNTPOINT;
+            g_snprintf(error_cause, 512, "No such mountpoint/stream %"SCNu64"", id_value);
+            goto plugin_response;
+        }
+        /* A secret may be required for this action */
+        JANUS_CHECK_SECRET(mp->secret, root, "secret", error_code, error_cause,
+                           JANUS_STREAMING_ERROR_MISSING_ELEMENT, JANUS_STREAMING_ERROR_INVALID_ELEMENT, JANUS_STREAMING_ERROR_UNAUTHORIZED);
+        if(error_code != 0) {
+            janus_mutex_unlock(&mountpoints_mutex);
+            goto plugin_response;
+        }
+        if(!strcasecmp(request_text, "enable")) {
+            /* Enable a previously disabled mountpoint */
+            JANUS_LOG(LOG_INFO, "[%s] Stream enabled\n", mp->name);
+            mp->enabled = TRUE;
+            /* FIXME: Should we notify the listeners, or is this up to the controller application? */
+        } else {
+            /* Disable a previously enabled mountpoint */
+            JANUS_LOG(LOG_INFO, "[%s] Stream disabled\n", mp->name);
+            mp->enabled = FALSE;
+            /* Any recording to close? */
+            if(mp->streaming_source == janus_streaming_source_rtp) {
+                janus_streaming_rtp_source *source = mp->source;
+                janus_mutex_lock(&source->rec_mutex);
+                if(source->arc) {
+                    janus_recorder_close(source->arc);
+                    JANUS_LOG(LOG_INFO, "[%s] Closed audio recording %s\n", mp->name, source->arc->filename ? source->arc->filename : "??");
+                    janus_recorder *tmp = source->arc;
+                    source->arc = NULL;
+                    janus_recorder_free(tmp);
+                }
+                if(source->vrc) {
+                    janus_recorder_close(source->vrc);
+                    JANUS_LOG(LOG_INFO, "[%s] Closed video recording %s\n", mp->name, source->vrc->filename ? source->vrc->filename : "??");
+                    janus_recorder *tmp = source->vrc;
+                    source->vrc = NULL;
+                    janus_recorder_free(tmp);
+                }
+                if(source->drc) {
+                    janus_recorder_close(source->drc);
+                    JANUS_LOG(LOG_INFO, "[%s] Closed data recording %s\n", mp->name, source->drc->filename ? source->drc->filename : "??");
+                    janus_recorder *tmp = source->drc;
+                    source->drc = NULL;
+                    janus_recorder_free(tmp);
+                }
+                janus_mutex_unlock(&source->rec_mutex);
+            }
+            /* FIXME: Should we notify the listeners, or is this up to the controller application? */
+        }
+        janus_mutex_unlock(&mountpoints_mutex);
+        /* Send a success response back */
+        response = json_object();
+        json_object_set_new(response, "streaming", json_string("ok"));
+        goto plugin_response;
+    }
+    else if(!strcasecmp(request_text, "watch-udp"))
+    {
+        json_t *id = json_object_get(root, "id");
+        if(!id) {
+            JANUS_LOG(LOG_ERR, "Missing element (id)\n");
+            error_code = JANUS_STREAMING_ERROR_MISSING_ELEMENT;
+            g_snprintf(error_cause, 512, "Missing element (id)");
+            goto plugin_response;
+        }
+        if(!json_is_integer(id)) {
+            JANUS_LOG(LOG_ERR, "Invalid element (id should be a integer)\n");
+            error_code = JANUS_STREAMING_ERROR_INVALID_ELEMENT;
+            g_snprintf(error_cause, 512, "Invalid element (id should be a integer)");
+            goto plugin_response;
+        }
+        
+        guint64 id_value = json_integer_value(id);
+        janus_mutex_lock(&mountpoints_mutex);
+        janus_streaming_mountpoint *mp = g_hash_table_lookup(mountpoints, &id_value);
+        if(mp == NULL) {
+            janus_mutex_unlock(&mountpoints_mutex);
+            JANUS_LOG(LOG_VERB, "No such mountpoint/stream %"SCNu64"\n", id_value);
+            error_code = JANUS_STREAMING_ERROR_NO_SUCH_MOUNTPOINT;
+            g_snprintf(error_cause, 512, "No such mountpoint/stream %"SCNu64"", id_value);
+            goto plugin_response;
+        }
+        /* Streams is an array now, containing pairs of audio+video streams */
+        json_t *streams = json_object_get(root, "streams");
+        size_t nstreams = json_array_size(streams);
+        if (nstreams==0 || !json_is_array(streams)) {
+            janus_mutex_unlock(&mountpoints_mutex);
+            JANUS_LOG(LOG_ERR, "Invalid element (streams should be a non-empty array)\n");
+            error_code = JANUS_STREAMING_ERROR_INVALID_ELEMENT;
+            g_snprintf(error_cause, 512, "Invalid element (streams should be a non-empty array)");
+            goto plugin_response;
+        }
+        
+        janus_mutex_unlock(&mountpoints_mutex);
+        JANUS_LOG(LOG_VERB, "Request to watch-source-udp of mountpoint %"SCNu64"\n", id_value);
+        
+        size_t i;
+        json_t *stream;
+        
+#ifdef json_array_foreach
+        json_array_foreach(streams, i, stream) {
+#else
+        for (i = 0; i < json_array_size(streams); i++) {
+            stream = json_array_get(streams, i);
+#endif
+            if(stream && !json_is_object(stream))
+            {
+                JANUS_LOG(LOG_ERR, "Invalid element (streams elements should be objects)\n");
+                error_code = JANUS_STREAMING_ERROR_INVALID_ELEMENT;
+                g_snprintf(error_cause, 512, "Invalid value (streams elements should be objects)");
+                goto plugin_response;
+            }
+                
+            json_t *json_audio_host = json_object_get(stream, "audiohost");
+            if(json_audio_host && !json_is_string(json_audio_host))
+            {
+                JANUS_LOG(LOG_ERR, "Invalid element (audiohost should be a string)\n");
+                error_code = JANUS_STREAMING_ERROR_INVALID_ELEMENT;
+                g_snprintf(error_cause, 512, "Invalid element (audiohost should be a string)");
+                goto plugin_response;
+            }
+            char *audio_host = (char *)json_string_value(json_audio_host);
+                
+            json_t *json_audio_port = json_object_get(stream, "audioport");
+            if(!json_audio_port)
+            {
+                JANUS_LOG(LOG_ERR, "Missing element audioport\n");
+                error_code = JANUS_STREAMING_ERROR_MISSING_ELEMENT;
+                g_snprintf(error_cause, 512, "Missing element audioport");
+                goto plugin_response;
+            }
+            if(!json_is_integer(json_audio_port) || json_integer_value(json_audio_port) < 0) {
+                JANUS_LOG(LOG_ERR, "Invalid element (audioport should be a positive integer)\n");
+                error_code = JANUS_STREAMING_ERROR_INVALID_ELEMENT;
+                g_snprintf(error_cause, 512, "Invalid element (audioport should be a positive integer)");
+                goto plugin_response;
+            }
+            int audio_port = json_integer_value(json_audio_port);
+            add_rtp_forwarder_body(mp, audio_host, audio_port, FALSE);
+                
+            json_t *json_video_host = json_object_get(stream, "videohost");
+            if(json_video_host && !json_is_string(json_video_host))
+            {
+                JANUS_LOG(LOG_ERR, "Invalid element (videohost should be a string)\n");
+                error_code = JANUS_STREAMING_ERROR_INVALID_ELEMENT;
+                g_snprintf(error_cause, 512, "Invalid element (videohost should be a string)");
+                goto plugin_response;
+            }
+            char *video_host = (char *)json_string_value(json_video_host);
+                
+            json_t *json_video_port = json_object_get(stream, "videoport");
+            if(!json_video_port)
+            {
+                JANUS_LOG(LOG_ERR, "Missing element videoport\n");
+                error_code = JANUS_STREAMING_ERROR_MISSING_ELEMENT;
+                g_snprintf(error_cause, 512, "Missing element videoport");
+                goto plugin_response;
+            }
+            if(!json_is_integer(json_video_port) || json_integer_value(json_video_port) < 0) {
+                JANUS_LOG(LOG_ERR, "Invalid element (videoport should be a positive integer)\n");
+                error_code = JANUS_STREAMING_ERROR_INVALID_ELEMENT;
+                g_snprintf(error_cause, 512, "Invalid element (videoport should be a positive integer)");
+                goto plugin_response;
+            }
+            int video_port = json_integer_value(json_video_port);
+            add_rtp_forwarder_body(mp, video_host, video_port, TRUE);
+        }
+            
+        response = json_object();
+        json_object_set_new(response, "ack", json_string("broadcast successful"));
+        goto plugin_response;
+    }
+    else if(!strcasecmp(request_text, "watch-udp")) {
+        json_t *id = json_object_get(root, "id");
+        if(!id) {
+            JANUS_LOG(LOG_ERR, "Missing element (id)\n");
+            error_code = JANUS_STREAMING_ERROR_MISSING_ELEMENT;
+            g_snprintf(error_cause, 512, "Missing element (id)");
+            goto plugin_response;
+        }
+        if(!json_is_integer(id)) {
+            JANUS_LOG(LOG_ERR, "Invalid element (id should be a integer)\n");
+            error_code = JANUS_STREAMING_ERROR_INVALID_ELEMENT;
+            g_snprintf(error_cause, 512, "Invalid element (id should be a integer)");
+            goto plugin_response;
+        }
+        
+        guint64 id_value = json_integer_value(id);
+        janus_mutex_lock(&mountpoints_mutex);
+        janus_streaming_mountpoint *mp = g_hash_table_lookup(mountpoints, &id_value);
+        if(mp == NULL) {
+            janus_mutex_unlock(&mountpoints_mutex);
+            JANUS_LOG(LOG_VERB, "No such mountpoint/stream %"SCNu64"\n", id_value);
+            error_code = JANUS_STREAMING_ERROR_NO_SUCH_MOUNTPOINT;
+            g_snprintf(error_cause, 512, "No such mountpoint/stream %"SCNu64"", id_value);
+            goto plugin_response;
+        }
+        /* Streams is an array now, containing pairs of audio+video streams */
+        json_t *streams = json_object_get(root, "streams");
+        size_t nstreams = json_array_size(streams);
+        if (nstreams==0 || !json_is_array(streams)) {
+            janus_mutex_unlock(&mountpoints_mutex);
+            JANUS_LOG(LOG_ERR, "Invalid element (streams should be a non-empty array)\n");
+            error_code = JANUS_STREAMING_ERROR_INVALID_ELEMENT;
+            g_snprintf(error_cause, 512, "Invalid element (streams should be a non-empty array)");
+            goto plugin_response;
+        }
+        
+        janus_mutex_unlock(&mountpoints_mutex);
+        JANUS_LOG(LOG_VERB, "Request to watch-source-udp of mountpoint %"SCNu64"\n", id_value);
+        
+        size_t i;
+        json_t *stream;
+        
+#ifdef json_array_foreach
+        json_array_foreach(streams, i, stream) {
+#else
+            for (i = 0; i < json_array_size(streams); i++) {
+                stream = json_array_get(streams, i);
+#endif
+                if(stream && !json_is_object(stream))
+                {
+                    JANUS_LOG(LOG_ERR, "Invalid element (streams elements should be objects)\n");
+                    error_code = JANUS_STREAMING_ERROR_INVALID_ELEMENT;
+                    g_snprintf(error_cause, 512, "Invalid value (streams elements should be objects)");
+                    goto plugin_response;
+                }
+                
+                json_t *json_audio_host = json_object_get(stream, "audiohost");
+                if(json_audio_host && !json_is_string(json_audio_host))
+                {
+                    JANUS_LOG(LOG_ERR, "Invalid element (audiohost should be a string)\n");
+                    error_code = JANUS_STREAMING_ERROR_INVALID_ELEMENT;
+                    g_snprintf(error_cause, 512, "Invalid element (audiohost should be a string)");
+                    goto plugin_response;
+                }
+                char *audio_host = (char *)json_string_value(json_audio_host);
+                
+                json_t *json_audio_port = json_object_get(stream, "audioport");
+                if(!json_audio_port)
+                {
+                    JANUS_LOG(LOG_ERR, "Missing element audioport\n");
+                    error_code = JANUS_STREAMING_ERROR_MISSING_ELEMENT;
+                    g_snprintf(error_cause, 512, "Missing element audioport");
+                    goto plugin_response;
+                }
+                if(!json_is_integer(json_audio_port) || json_integer_value(json_audio_port) < 0) {
+                    JANUS_LOG(LOG_ERR, "Invalid element (audioport should be a positive integer)\n");
+                    error_code = JANUS_STREAMING_ERROR_INVALID_ELEMENT;
+                    g_snprintf(error_cause, 512, "Invalid element (audioport should be a positive integer)");
+                    goto plugin_response;
+                }
+                int audio_port = json_integer_value(json_audio_port);
+                add_rtp_forwarder_body(mp, audio_host, audio_port, FALSE);
+                
+                
+                json_t *json_video_host = json_object_get(stream, "videohost");
+                if(json_video_host && !json_is_string(json_video_host))
+                {
+                    JANUS_LOG(LOG_ERR, "Invalid element (videohost should be a string)\n");
+                    error_code = JANUS_STREAMING_ERROR_INVALID_ELEMENT;
+                    g_snprintf(error_cause, 512, "Invalid element (videohost should be a string)");
+                    goto plugin_response;
+                }
+                char *video_host = (char *)json_string_value(json_video_host);
+                
+                json_t *json_video_port = json_object_get(stream, "videoport");
+                if(!json_video_port)
+                {
+                    JANUS_LOG(LOG_ERR, "Missing element videoport\n");
+                    error_code = JANUS_STREAMING_ERROR_MISSING_ELEMENT;
+                    g_snprintf(error_cause, 512, "Missing element videoport");
+                    goto plugin_response;
+                }
+                if(!json_is_integer(json_video_port) || json_integer_value(json_video_port) < 0) {
+                    JANUS_LOG(LOG_ERR, "Invalid element (videoport should be a positive integer)\n");
+                    error_code = JANUS_STREAMING_ERROR_INVALID_ELEMENT;
+                    g_snprintf(error_cause, 512, "Invalid element (videoport should be a positive integer)");
+                    goto plugin_response;
+                }
+                int video_port = json_integer_value(json_video_port);
+                add_rtp_forwarder_body(mp, video_host, video_port, TRUE);
+                
+                
+            }
+            
+            response = json_object();
+            json_object_set_new(response, "ack", json_string("broadcast successful"));
+            goto plugin_response;
+        }
+        
+    else if(!strcasecmp(request_text, "watch") || !strcasecmp(request_text, "start")
 			|| !strcasecmp(request_text, "pause") || !strcasecmp(request_text, "stop")
 			|| !strcasecmp(request_text, "configure") || !strcasecmp(request_text, "switch")) {
 		/* These messages are handled asynchronously */
@@ -3290,6 +3606,7 @@ janus_streaming_mountpoint *janus_streaming_create_rtp_source(
 	live_rtp->codecs.video_rtpmap = dovideo ? g_strdup(vrtpmap) : NULL;
 	live_rtp->codecs.video_fmtp = dovideo ? (vfmtp ? g_strdup(vfmtp) : NULL) : NULL;
 	live_rtp->listeners = NULL;
+    live_rtp->rtp_forwarder_listeners = NULL;
 	live_rtp->destroyed = 0;
 	janus_mutex_init(&live_rtp->mutex);
 	g_hash_table_insert(mountpoints, janus_uint64_dup(live_rtp->id), live_rtp);
