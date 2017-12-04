@@ -4703,7 +4703,7 @@ static void *janus_streaming_relay_thread(void *data) {
                             ping_pkt_t pingReply;
                             memset(&pingReply, 0, sizeof(ping_pkt_t));
                             pingReply.header = htonl((2 << 30) | (1 << 29) | (feedbackType << 24) | (ptype<<16));
-                            gettimeofday(&pingReply.xmit_time, NULL);  ;
+                            pingReply.xmit_time = ping->xmit_time;
                             int sendLength = sendto(fds[i].fd, &pingReply, sizeof(ping_pkt_t), 0, (struct sockaddr*)&remote, addrlen);
                             if(sendLength<=0)
                             {
