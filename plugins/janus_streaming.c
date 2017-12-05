@@ -4627,6 +4627,31 @@ static void *janus_streaming_relay_thread(void *data) {
 						continue;
 					}
 					//~ JANUS_LOG(LOG_VERB, "************************\nGot %d bytes on the audio channel...\n", bytes);
+                    ping_pkt_t *ping = (ping_pkt_t *)buffer;
+                    if(ping!=NULL)
+                    {
+                        uint32_t header = htonl(ping->header);
+                        uint16_t length = header & 0xFFFF;
+                        uint8_t ptype = (header>>16) & 0xFF;
+                        if(ptype==PING_PTYPE)
+                        {
+                            uint8_t feedbackType = 1;
+                            ping_pkt_t pingReply;
+                            memset(&pingReply, 0, sizeof(ping_pkt_t));
+                            pingReply.header = htonl((2 << 30) | (1 << 29) | (feedbackType << 24) | (ptype<<16));
+                            pingReply.xmit_time = ping->xmit_time;
+                            gint64 time = (ping->xmit_time.tv_sec*G_GINT64_CONSTANT(1000000)) + (ping->xmit_time.tv_usec/G_GINT64_CONSTANT(1000));
+                            g_print("ping:%d\t%ld\n", ping->xmit_time.tv_sec, ping->xmit_time.tv_usec);  
+                            int sendLength = sendto(fds[i].fd, &pingReply, sizeof(ping_pkt_t), 0, (struct sockaddr*)&remote, addrlen);
+                            if(sendLength<=0)
+                            {
+                                g_print("PING:Error sending: %s\n", strerror(errno));
+                            }
+                        
+                            continue;
+                        }
+                    }
+
 					/* If paused, ignore this packet */
 					if(!mountpoint->enabled)
 						continue;
@@ -4690,37 +4715,6 @@ static void *janus_streaming_relay_thread(void *data) {
 						continue;
 					}
 					//~ JANUS_LOG(LOG_VERB, "************************\nGot %d bytes on the video channel...\n", bytes);
-                    
-                    ping_pkt_t *ping = (ping_pkt_t *)buffer;
-                    if(ping!=NULL)
-                    {
-                        uint32_t header = htonl(ping->header);
-                        uint16_t length = header & 0xFFFF;
-                        uint8_t ptype = (header>>16) & 0xFF;
-                        if(ptype==PING_PTYPE)
-                        {
-                            uint8_t feedbackType = 1;
-                            ping_pkt_t pingReply;
-                            memset(&pingReply, 0, sizeof(ping_pkt_t));
-                            pingReply.header = htonl((2 << 30) | (1 << 29) | (feedbackType << 24) | (ptype<<16));
-                            pingReply.xmit_time = ping->xmit_time;
-                            int sendLength = sendto(fds[i].fd, &pingReply, sizeof(ping_pkt_t), 0, (struct sockaddr*)&remote, addrlen);
-                            if(sendLength<=0)
-                            {
-                                g_print("Error sending: %s\n", strerror(errno));
-                            }
-                            else
-                            {
-                                g_print("success send = %d\n", sendLength);  //打印自己发送的信息
-                            }
-                            
-                            continue;
-                        }
-                    }
-
-                    
-                    
-                    
 					rtp_header *rtp = (rtp_header *)buffer;
 					/* First of all, let's check if this is (part of) a keyframe that we may need to save it for future reference */
 					if(source->keyframe.enabled) {
