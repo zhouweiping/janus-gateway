@@ -162,6 +162,7 @@ rtspiface = network interface IP address or device name to listen on when receiv
 #define JANUS_STREAMING_NAME			"JANUS Streaming plugin"
 #define JANUS_STREAMING_AUTHOR			"Meetecho s.r.l."
 #define JANUS_STREAMING_PACKAGE			"janus.plugin.streaming"
+#define PING_PTYPE 250
 
 /* Plugin methods */
 janus_plugin *create(void);
@@ -350,6 +351,11 @@ typedef struct janus_streaming_rtp_keyframe {
 	guint32 temp_ts;
 	janus_mutex mutex;
 } janus_streaming_rtp_keyframe;
+
+typedef struct ping_pkt_t{
+    uint32_t header;
+    struct timeval xmit_time;
+}ping_pkt_t;
 
 #ifdef HAVE_LIBCURL
 typedef struct janus_streaming_buffer {
@@ -3986,6 +3992,30 @@ static void *janus_streaming_relay_thread(void *data) {
 						continue;
 					}
 					//~ JANUS_LOG(LOG_VERB, "************************\nGot %d bytes on the audio channel...\n", bytes);
+                    ping_pkt_t *ping = (ping_pkt_t *)buffer;
+                    if(ping!=NULL)
+                    {
+                        uint32_t header = htonl(ping->header);
+                        uint16_t length = header & 0xFFFF;
+                        uint8_t ptype = (header>>16) & 0xFF;
+                        if(ptype==PING_PTYPE)
+                        {
+                            uint8_t feedbackType = 1;
+                            ping_pkt_t pingReply;
+                            memset(&pingReply, 0, sizeof(ping_pkt_t));
+                            pingReply.header = htonl((2 << 30) | (1 << 29) | (feedbackType << 24) | (ptype<<16));
+                            pingReply.xmit_time = ping->xmit_time;
+                            g_print("ping:%d\t%ld\n", ping->xmit_time.tv_sec, ping->xmit_time.tv_usec);
+                            int sendLength = sendto(fds[i].fd, &pingReply, sizeof(ping_pkt_t), 0, (struct sockaddr*)&remote, addrlen);
+                            if(sendLength<=0)
+                            {
+                                g_print("PING:Error sending: %s\n", strerror(errno));
+                            }
+                            
+                            continue;
+                        }
+                    }
+                    
 					/* If paused, ignore this packet */
 					if(!mountpoint->enabled)
 						continue;
