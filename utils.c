@@ -20,6 +20,7 @@
 
 #include "utils.h"
 #include "debug.h"
+#include "mutex.h"
 
 #if __MACH__
 #include "mach_gettime.h"
@@ -494,3 +495,233 @@ gboolean janus_json_is_valid(json_t *val, json_type jtype, unsigned int flags) {
 	}
 	return is_valid;
 }
+
+typedef struct csv_content{
+    gint64 seq_number;
+    gint64 timestamp;
+    int markerbit;
+    int isSend;
+    int isRetransmit;
+}csv_content;
+
+
+static GHashTable *hash_csv_content = NULL;
+static void *write_csv_data_thread(void *data);
+static janus_mutex csv_mutex;
+
+void display_hash_table(GHashTable *table)
+{
+    GHashTableIter iter;
+    gpointer key;
+    gpointer value;
+    
+    g_hash_table_iter_init(&iter, table);
+    g_printf("csv data receive:-----------------\n");
+    while(g_hash_table_iter_next(&iter, &key, &value))
+    {
+        csv_content *content = value;
+        g_printf("csv data receive:%d ---> %ld, %ld, %d\n",  *(gint*)key, content->seq_number, content->timestamp, content->markerbit);
+    }
+    g_printf("csv data receive:******************\n");
+}
+
+
+
+
+void InitialHash()
+{
+    janus_mutex_init(&csv_mutex);
+    if(hash_csv_content == NULL)
+    {
+        hash_csv_content = g_hash_table_new(g_int64_hash, g_int64_equal);
+    }
+    else
+    {
+        g_hash_table_remove_all(hash_csv_content);
+    }
+    
+    char *filename = "stats.csv";
+    FILE *file = fopen(filename, "w+");
+    if(file == NULL) {
+        JANUS_LOG(LOG_ERR, "Could not open file %s\n", filename);
+        return;
+    }
+    
+    fprintf(file, "seq_number,timestamp,markerbit,isSend,retransmit\n");
+    fclose(file);
+    
+    GError *errorBufferQueqe = NULL;
+    g_thread_try_new("csv_thread", &write_csv_data_thread, NULL, &errorBufferQueqe);
+    if(errorBufferQueqe != NULL) {
+        JANUS_LOG(LOG_ERR, "Got error %d (%s) trying to launch the write csv thread...\n", errorBufferQueqe->code, errorBufferQueqe->message ? errorBufferQueqe->message : "??");
+        return;
+    }
+}
+
+void WriteReceiveData(gint64 seq_number, gint64 timestamp, int markerbit)
+{
+    csv_content *content = g_malloc0(sizeof(csv_content));
+    content->seq_number = seq_number;
+    content->timestamp = timestamp;
+    content->markerbit = markerbit;
+    content->isSend = 0;
+    content->isRetransmit = 0;
+    
+    if(hash_csv_content!=NULL)
+    {
+        gint64 key = seq_number<<44;    //seq_number占20位
+        key = key | timestamp<<4;       //timestamp占40位
+        key = key | markerbit;          //markerbit占4位
+        g_printf("csv data :key = %ld, %ld_%ld_%d\n", key, seq_number, timestamp, markerbit);
+        janus_mutex_lock(&csv_mutex);
+        g_hash_table_insert(hash_csv_content, janus_uint64_dup(key), content);
+        janus_mutex_unlock(&csv_mutex);
+    }
+}
+
+
+void WriteFile()
+{
+    char *filename = "stats.csv";
+    FILE *file = fopen(filename, "a+");
+    if(file == NULL) {
+        JANUS_LOG(LOG_ERR, "Could not open file %s\n", filename);
+        return;
+    }
+    
+    GHashTableIter iter;
+    gpointer value;
+    g_hash_table_iter_init(&iter, hash_csv_content);
+    janus_mutex_lock(&csv_mutex);
+    while(g_hash_table_iter_next(&iter, NULL, &value))
+    {
+        csv_content *content = value;
+        if(content==NULL)
+        {
+            continue;
+        }
+        
+        fprintf(file, "%ld,%ld,%d,%d,%d\n", content->seq_number, content->timestamp, content->markerbit,
+                content->isSend, content->isRetransmit);
+        g_free(content);
+        g_hash_table_iter_remove(&iter);
+    }
+    janus_mutex_unlock(&csv_mutex);
+    fclose(file);
+}
+
+
+void UpdateSendCsvData(gint64 seq_number, gint64 timestamp, int markerbit)
+{
+    gint64 key = seq_number<<44;        //seq_number占20位
+    key = key | timestamp<<4;           //timestamp占40位
+    key = key | markerbit;              //markerbit占4位
+    
+    if(hash_csv_content!=NULL)
+    {
+//        g_printf("csv data update:key = %ld, %ld_%ld_%d\n", key, seq_number, timestamp, markerbit);
+        csv_content *content = g_hash_table_lookup(hash_csv_content, &key);
+        if(content == NULL) {
+            g_printf("csv data not found key:%ld_%ld_%d\n", seq_number, timestamp, markerbit);
+            return;
+        }
+        content->isSend = 1;
+        janus_mutex_lock(&csv_mutex);
+        g_hash_table_replace(hash_csv_content, janus_uint64_dup(key), content);
+        janus_mutex_unlock(&csv_mutex);
+    }
+}
+
+void UpdateRetransmitCsvData(gint64 seq_number, gint64 timestamp, int markerbit)
+{
+    gint64 key = seq_number<<44;        //seq_number占20位
+    key = key | timestamp<<4;           //timestamp占40位
+    key = key | markerbit;              //markerbit占4位
+    
+    if(hash_csv_content!=NULL)
+    {
+        //        g_printf("csv data update:key = %ld, %ld_%ld_%d\n", key, seq_number, timestamp, markerbit);
+        csv_content *content = g_hash_table_lookup(hash_csv_content, &key);
+        if(content == NULL) {
+            g_printf("csv data not found key:%ld_%ld_%d\n", seq_number, timestamp, markerbit);
+            return;
+        }
+        content->isSend = 1;
+        content->isRetransmit = 1;
+        janus_mutex_lock(&csv_mutex);
+        g_hash_table_replace(hash_csv_content, janus_uint64_dup(key), content);
+        janus_mutex_unlock(&csv_mutex);
+    }
+}
+
+
+
+
+static void *write_csv_data_thread(void *data)
+{
+    g_printf( "Starting write csv thread\n");
+    while(TRUE)
+    {
+        sleep(1800);
+        WriteFile();
+    }
+}
+
+/*
+ void InitialCsvFile()
+ {
+ char *filename = "stats.csv";
+ FILE *file = fopen(filename, "w+");
+ if(file == NULL) {
+ JANUS_LOG(LOG_ERR, "Could not open file %s\n", filename);
+ return;
+ }
+ 
+ fprintf(file, "seq_number,timestamp,markerbit,isSend,retransmit\n");
+ fclose(file);
+ }
+ 
+ gboolean WriteReceiveCsvFile(gint64 seq_number, gint64 timestamp, int markerbit)
+ {
+ char *filename = "stats.csv";
+ FILE *file = fopen(filename, "a+");
+ if(file == NULL) {
+ JANUS_LOG(LOG_ERR, "Could not open file %s\n", filename);
+ return -1;
+ }
+ fprintf(file, "%ld,%ld,%d,%d,%d\n", seq_number, timestamp, markerbit, 0, 0);
+ fclose(file);
+ return 0;
+ }
+ 
+ gboolean UpdateSendCsvFile(gint64 seq_number, gint64 timestamp, int markerbit)
+ {
+ char *filename = "stats.csv";
+ FILE *file = fopen(filename, "r+");
+ if(file == NULL) {
+ JANUS_LOG(LOG_ERR, "Could not open file %s\n", filename);
+ return -1;
+ }
+ gint64 origin_seq_number;
+ gint64 origin_timestamp;
+ int origin_markerbit;
+ int isSend;
+ int isRetransmit;
+ long current_pos = 48L;//第一行的偏移量
+ fseek(file, current_pos, SEEK_SET);
+ while(fscanf(file, "%ld,%ld,%ld,%d,%d", &origin_seq_number, &origin_timestamp, &origin_markerbit, &isSend, &isRetransmit)!=EOF)
+ {
+ if(origin_seq_number==seq_number && timestamp==origin_timestamp && origin_markerbit==markerbit)
+ {
+ fseek(file, current_pos + 1, SEEK_SET); //定位到要修改的位置
+ fprintf(file, "%ld,%ld,%d,%d,%d\n", seq_number, timestamp, markerbit, 1, isRetransmit);
+ break;
+ }
+ current_pos = ftell(file);
+ }
+ 
+ fclose(file);
+ return 0;
+ }
+ */
+

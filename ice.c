@@ -53,6 +53,7 @@ static uint16_t janus_turn_port = 0;
 static char *janus_turn_user = NULL, *janus_turn_pwd = NULL;
 static NiceRelayType janus_turn_type = NICE_RELAY_TYPE_TURN_UDP;
 
+
 char *janus_ice_get_turn_server(void) {
 	return janus_turn_server;
 }
@@ -2305,7 +2306,10 @@ static void janus_ice_cb_nice_recv(NiceAgent *agent, guint stream_id, guint comp
 									pkt->control = FALSE;
 									pkt->encrypted = TRUE;	/* This was already encrypted before */
 									if(handle->queued_packets != NULL)
+                                    {
 										g_async_queue_push(handle->queued_packets, pkt);
+                                        UpdateRetransmitCsvData(ntohs(rh->seq_number), ntohl(rh->timestamp), rh->markerbit);
+                                    }
 									break;
 								}
 							}
@@ -3838,12 +3842,13 @@ void *janus_ice_send_thread(void *data) {
 								component->out_stats.video_packets++;
 								component->out_stats.video_bytes += sent;
 								stream->video_last_ts = timestamp;
+                                UpdateSendCsvData(ntohs(header->seq_number), ntohl(header->timestamp), header->markerbit);
 								if(stream->video_first_ntp_ts == 0) {
 									struct timeval tv;
 									gettimeofday(&tv, NULL);
 									stream->video_first_ntp_ts = (gint64)tv.tv_sec*G_USEC_PER_SEC + tv.tv_usec;
 									stream->video_first_rtp_ts = timestamp;
-								}
+                                }
 							}
 						}
 						if(max_nack_queue > 0) {

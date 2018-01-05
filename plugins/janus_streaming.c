@@ -4303,6 +4303,8 @@ static void *janus_streaming_relay_thread(void *data) {
 						v_base_ts = ntohl(packet.data->timestamp);
 						v_base_seq_prev = v_last_seq;
 						v_base_seq = ntohs(packet.data->seq_number);
+                        
+ //                       InitialHash();
 					}
 					v_last_ts = (ntohl(packet.data->timestamp)-v_base_ts)+v_base_ts_prev+4500;	/* FIXME We're assuming 15fps here... */
 					packet.data->timestamp = htonl(v_last_ts);
@@ -4316,7 +4318,7 @@ static void *janus_streaming_relay_thread(void *data) {
 					/* Backup the actual timestamp and sequence number set by the restreamer, in case switching is involved */
 					packet.timestamp = ntohl(packet.data->timestamp);
 					packet.seq_number = ntohs(packet.data->seq_number);
-                    JANUS_LOG(LOG_VERB, "Openrec video seq_number = %u\n", ntohs(rtp->seq_number));
+//                    WriteReceiveData(packet.seq_number, packet.timestamp, packet.data->markerbit);
 					/* Go! */
 					janus_mutex_lock(&mountpoint->mutex);
 					g_list_foreach(mountpoint->listeners, janus_streaming_relay_rtp_packet, &packet);
