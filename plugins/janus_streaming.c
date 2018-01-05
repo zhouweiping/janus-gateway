@@ -4318,7 +4318,7 @@ static void *janus_streaming_relay_thread(void *data) {
 					/* Backup the actual timestamp and sequence number set by the restreamer, in case switching is involved */
 					packet.timestamp = ntohl(packet.data->timestamp);
 					packet.seq_number = ntohs(packet.data->seq_number);
-//                    WriteReceiveData(packet.seq_number, packet.timestamp, packet.data->markerbit);
+                    WriteReceiveData(packet.seq_number, packet.timestamp, packet.data->markerbit);
 					/* Go! */
 					janus_mutex_lock(&mountpoint->mutex);
 					g_list_foreach(mountpoint->listeners, janus_streaming_relay_rtp_packet, &packet);
