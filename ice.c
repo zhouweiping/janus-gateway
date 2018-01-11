@@ -287,6 +287,7 @@ typedef struct janus_ice_queued_packet {
 	gint type;
 	gboolean control;
 	gboolean encrypted;
+    gint64 index;
 } janus_ice_queued_packet;
 /* This is a static, fake, message we use as a trigger to send a DTLS alert */
 static janus_ice_queued_packet janus_ice_dtls_alert;
@@ -2308,7 +2309,7 @@ static void janus_ice_cb_nice_recv(NiceAgent *agent, guint stream_id, guint comp
 									if(handle->queued_packets != NULL)
                                     {
 										g_async_queue_push(handle->queued_packets, pkt);
-                                        UpdateRetransmitCsvData(ntohs(rh->seq_number), ntohl(rh->timestamp), rh->markerbit);
+                                        UpdateRetransmitCsvData(pkt->index, ntohl(rh->timestamp), rh->markerbit);
                                     }
 									break;
 								}
@@ -3842,7 +3843,52 @@ void *janus_ice_send_thread(void *data) {
 								component->out_stats.video_packets++;
 								component->out_stats.video_bytes += sent;
 								stream->video_last_ts = timestamp;
-                                UpdateSendCsvData(ntohs(header->seq_number), ntohl(header->timestamp), header->markerbit);
+                                
+                                //更新ice的统计信息
+                                guint64 receive_bytes;
+                                gint64 receive_when;
+                                guint64 send_bytes;
+                                gint64 send_when;
+                                
+                                GList *lastItem = g_list_last(component->in_stats.video_bytes_lastsec);
+                                if(lastItem!=NULL)
+                                {
+                                    janus_ice_stats_item *last = (janus_ice_stats_item *)lastItem->data;
+                                    if(last!=NULL)
+                                    {
+                                        receive_bytes = last->bytes;
+                                        receive_when = last->when;
+                                    }
+                                    else
+                                    {
+                                        receive_bytes = 0;
+                                        receive_when = 0;
+
+                                    }
+                                
+                                    lastItem = g_list_last(component->out_stats.video_bytes_lastsec);
+                                    last = (janus_ice_stats_item *)lastItem->data;
+                                    if(last!=NULL)
+                                    {
+                                        send_bytes = last->bytes;
+                                        send_when = last->when;
+                                    }
+                                    else
+                                    {
+                                        send_bytes = 0;
+                                        send_when = 0;
+                                    
+                                    }
+                                }
+                                else
+                                {
+                                    receive_bytes = 0;
+                                    receive_when = 0;
+                                    send_bytes = 0;
+                                    send_when = 0;
+                                }
+                                UpdateSendCsvData(pkt->index, ntohl(header->timestamp), header->markerbit, sent, component->in_stats.video_packets, component->in_stats.video_bytes, receive_bytes, receive_when, component->in_stats.video_notified_lastsec? 1 : 0, component->in_stats.video_nacks, component->in_stats.last_slowlink_time, component->in_stats.sl_nack_period_ts,component->in_stats.sl_nack_recent_cnt,      component->out_stats.video_packets, component->out_stats.video_bytes, send_bytes, send_when, component->out_stats.video_notified_lastsec? 1 : 0, component->out_stats.video_nacks, component->out_stats.last_slowlink_time, component->out_stats.sl_nack_period_ts,component->out_stats.sl_nack_recent_cnt);
+                               
 								if(stream->video_first_ntp_ts == 0) {
 									struct timeval tv;
 									gettimeofday(&tv, NULL);
@@ -3930,7 +3976,7 @@ void *janus_ice_send_thread(void *data) {
 	return NULL;
 }
 
-void janus_ice_relay_rtp(janus_ice_handle *handle, int video, char *buf, int len) {
+void janus_ice_relay_rtp(janus_ice_handle *handle, int video, char *buf, int len, gint64 index) {
 	if(!handle || buf == NULL || len < 1)
 		return;
 	if((!video && !janus_flags_is_set(&handle->webrtc_flags, JANUS_ICE_HANDLE_WEBRTC_HAS_AUDIO))
@@ -3944,6 +3990,7 @@ void janus_ice_relay_rtp(janus_ice_handle *handle, int video, char *buf, int len
 	pkt->type = video ? JANUS_ICE_PACKET_VIDEO : JANUS_ICE_PACKET_AUDIO;
 	pkt->control = FALSE;
 	pkt->encrypted = FALSE;
+    pkt->index = index;
 	if(handle->queued_packets != NULL)
 		g_async_queue_push(handle->queued_packets, pkt);
 }

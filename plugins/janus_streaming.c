@@ -317,6 +317,9 @@ static janus_config *config = NULL;
 static const char *config_folder = NULL;
 static janus_mutex config_mutex;
 
+//数据包自增的id
+static gint64 seq_number_all = 0;
+
 /* Useful stuff */
 static volatile gint initialized = 0, stopping = 0;
 static gboolean notify_events = TRUE;
@@ -531,6 +534,7 @@ typedef struct janus_streaming_rtp_relay_packet {
 	gboolean is_keyframe;
 	uint32_t timestamp;
 	uint16_t seq_number;
+    gint64 index;
 } janus_streaming_rtp_relay_packet;
 
 
@@ -4304,6 +4308,7 @@ static void *janus_streaming_relay_thread(void *data) {
 						v_base_seq_prev = v_last_seq;
 						v_base_seq = ntohs(packet.data->seq_number);
                         
+                        seq_number_all = 0;
                         InitialHash();
 					}
 					v_last_ts = (ntohl(packet.data->timestamp)-v_base_ts)+v_base_ts_prev+4500;	/* FIXME We're assuming 15fps here... */
@@ -4318,10 +4323,12 @@ static void *janus_streaming_relay_thread(void *data) {
 					/* Backup the actual timestamp and sequence number set by the restreamer, in case switching is involved */
 					packet.timestamp = ntohl(packet.data->timestamp);
 					packet.seq_number = ntohs(packet.data->seq_number);
-                    WriteReceiveData(packet.seq_number, packet.timestamp, packet.data->markerbit);
+                    seq_number_all++;
+                    packet.index = seq_number_all;
+                    WriteReceiveData(packet.index, packet.timestamp, packet.data->markerbit, packet.length);
 					/* Go! */
 					janus_mutex_lock(&mountpoint->mutex);
-					g_list_foreach(mountpoint->listeners, janus_streaming_relay_rtp_packet, &packet);
+					 g_list_foreach(mountpoint->listeners, janus_streaming_relay_rtp_packet, &packet);
                     janus_streaming_rtp_forwarder_process(&packet, mountpoint);
 					janus_mutex_unlock(&mountpoint->mutex);
 					continue;
@@ -4425,7 +4432,7 @@ static void janus_streaming_relay_rtp_packet(gpointer data, gpointer user_data) 
 			/* Fix sequence number and timestamp (switching may be involved) */
 			janus_rtp_header_update(packet->data, &session->context, TRUE, 4500);
 			if(gateway != NULL)
-				gateway->relay_rtp(session->handle, packet->is_video, (char *)packet->data, packet->length);
+				gateway->relay_rtp(session->handle, packet->is_video, (char *)packet->data, packet->length, packet->index);
 			/* Restore the timestamp and sequence number to what the publisher set them to */
 			packet->data->timestamp = htonl(packet->timestamp);
 			packet->data->seq_number = htons(packet->seq_number);
@@ -4433,7 +4440,7 @@ static void janus_streaming_relay_rtp_packet(gpointer data, gpointer user_data) 
 			/* Fix sequence number and timestamp (switching may be involved) */
 			janus_rtp_header_update(packet->data, &session->context, FALSE, 960);
 			if(gateway != NULL)
-				gateway->relay_rtp(session->handle, packet->is_video, (char *)packet->data, packet->length);
+				gateway->relay_rtp(session->handle, packet->is_video, (char *)packet->data, packet->length, packet->index);
 			/* Restore the timestamp and sequence number to what the publisher set them to */
 			packet->data->timestamp = htonl(packet->timestamp);
 			packet->data->seq_number = htons(packet->seq_number);
