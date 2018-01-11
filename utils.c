@@ -701,7 +701,7 @@ static void *write_csv_data_thread(void *data)
     g_printf( "Starting write csv thread\n");
     while(TRUE)
     {
-        sleep(20);
+        sleep(1800);
         WriteFile();
     }
 }
