@@ -2309,7 +2309,7 @@ static void janus_ice_cb_nice_recv(NiceAgent *agent, guint stream_id, guint comp
 									if(handle->queued_packets != NULL)
                                     {
 										g_async_queue_push(handle->queued_packets, pkt);
-                                        UpdateRetransmitCsvData(pkt->index, ntohl(rh->timestamp), rh->markerbit);
+ //                                       UpdateRetransmitCsvData(pkt->index, ntohl(rh->timestamp), rh->markerbit);
                                     }
 									break;
 								}
@@ -3844,7 +3844,7 @@ void *janus_ice_send_thread(void *data) {
 								component->out_stats.video_bytes += sent;
 								stream->video_last_ts = timestamp;
                                 
-                                //更新ice的统计信息
+/*                                //更新ice的统计信息
                                 guint64 receive_bytes;
                                 gint64 receive_when;
                                 guint64 send_bytes;
@@ -3888,7 +3888,7 @@ void *janus_ice_send_thread(void *data) {
                                     send_when = 0;
                                 }
                                 UpdateSendCsvData(pkt->index, ntohl(header->timestamp), header->markerbit, sent, component->in_stats.video_packets, component->in_stats.video_bytes, receive_bytes, receive_when, component->in_stats.video_notified_lastsec? 1 : 0, component->in_stats.video_nacks, component->in_stats.last_slowlink_time, component->in_stats.sl_nack_period_ts,component->in_stats.sl_nack_recent_cnt,      component->out_stats.video_packets, component->out_stats.video_bytes, send_bytes, send_when, component->out_stats.video_notified_lastsec? 1 : 0, component->out_stats.video_nacks, component->out_stats.last_slowlink_time, component->out_stats.sl_nack_period_ts,component->out_stats.sl_nack_recent_cnt);
-                               
+ */                              
 								if(stream->video_first_ntp_ts == 0) {
 									struct timeval tv;
 									gettimeofday(&tv, NULL);

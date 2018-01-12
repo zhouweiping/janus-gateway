@@ -4309,7 +4309,7 @@ static void *janus_streaming_relay_thread(void *data) {
 						v_base_seq = ntohs(packet.data->seq_number);
                         
                         seq_number_all = 0;
-                        InitialHash();
+ //                       InitialHash();
 					}
 					v_last_ts = (ntohl(packet.data->timestamp)-v_base_ts)+v_base_ts_prev+4500;	/* FIXME We're assuming 15fps here... */
 					packet.data->timestamp = htonl(v_last_ts);
@@ -4325,7 +4325,7 @@ static void *janus_streaming_relay_thread(void *data) {
 					packet.seq_number = ntohs(packet.data->seq_number);
                     seq_number_all++;
                     packet.index = seq_number_all;
-                    WriteReceiveData(packet.index, packet.timestamp, packet.data->markerbit, packet.length);
+//                    WriteReceiveData(packet.index, packet.timestamp, packet.data->markerbit, packet.length);
 					/* Go! */
 					janus_mutex_lock(&mountpoint->mutex);
 					 g_list_foreach(mountpoint->listeners, janus_streaming_relay_rtp_packet, &packet);
