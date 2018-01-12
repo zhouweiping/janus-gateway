@@ -597,7 +597,7 @@ void WriteReceiveData(gint64 seq_number, gint64 timestamp, int markerbit, int le
     
     if(hash_csv_content!=NULL)
     {
-        g_printf("csv data :key = %ld, %ld_%ld_%d_%d\n", seq_number, seq_number, timestamp, markerbit, length);
+ //       g_printf("csv data :key = %ld, %ld_%ld_%d_%d\n", seq_number, seq_number, timestamp, markerbit, length);
         janus_mutex_lock(&csv_mutex);
         g_hash_table_insert(hash_csv_content, janus_uint64_dup(seq_number), content);
         janus_mutex_unlock(&csv_mutex);
@@ -644,7 +644,7 @@ void UpdateSendCsvData(gint64 seq_number, gint64 timestamp, int markerbit, int l
     {
         csv_content *content = g_hash_table_lookup(hash_csv_content, &seq_number);
         if(content == NULL) {
-            g_printf("csv data not found key:%ld\n", seq_number);
+            g_printf("csv data send not found key:%ld\n", seq_number);
             return;
         }
         content->send_length = length;
@@ -681,10 +681,10 @@ void UpdateRetransmitCsvData(gint64 seq_number, gint64 timestamp, int markerbit)
 {
     if(hash_csv_content!=NULL)
     {
-        g_printf("csv data update:key = %ld, %ld_%ld_%d\n", seq_number, seq_number, timestamp, markerbit);
+//        g_printf("csv data update:key = %ld, %ld_%ld_%d\n", seq_number, seq_number, timestamp, markerbit);
         csv_content *content = g_hash_table_lookup(hash_csv_content, &seq_number);
         if(content == NULL) {
-            g_printf("csv data not found key:%ld_%ld_%d\n", seq_number, timestamp, markerbit);
+            g_printf("csv data retransmit found key:%ld_%ld_%d\n", seq_number, timestamp, markerbit);
             return;
         }
         
