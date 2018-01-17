@@ -288,7 +288,6 @@ typedef struct janus_ice_queued_packet {
 	gboolean control;
 	gboolean encrypted;
     gint64 index;
-    uint16_t origin_seq;
 } janus_ice_queued_packet;
 /* This is a static, fake, message we use as a trigger to send a DTLS alert */
 static janus_ice_queued_packet janus_ice_dtls_alert;
@@ -3796,7 +3795,7 @@ void *janus_ice_send_thread(void *data) {
                     else
                     {
                         JANUS_LOG(LOG_HUGE, "Retransmitting seq.nr csv data retransmit :seq_number = %ld, timestamp = %ld, markerbit=%d\n", ntohs(header->seq_number), ntohl(header->timestamp), header->markerbit);
-                        UpdateRetransmitCsvData(pkt->index, pkt->origin_seq, sent);
+                        UpdateRetransmitCsvData(ntohs(header->seq_number), ntohl(header->timestamp), header->markerbit, sent);
                     }
 				} else {
 					/* FIXME Copy in a buffer and fix SSRC */
@@ -3891,7 +3890,7 @@ void *janus_ice_send_thread(void *data) {
                                     send_bytes = 0;
                                     send_when = 0;
                                 }
-                                UpdateSendCsvData(pkt->index, ntohl(header->timestamp), header->markerbit, sent, component->in_stats.video_packets, component->in_stats.video_bytes, receive_bytes, receive_when, component->in_stats.video_notified_lastsec? 1 : 0, component->in_stats.video_nacks, component->in_stats.last_slowlink_time, component->in_stats.sl_nack_period_ts,component->in_stats.sl_nack_recent_cnt,      component->out_stats.video_packets, component->out_stats.video_bytes, send_bytes, send_when, component->out_stats.video_notified_lastsec? 1 : 0, component->out_stats.video_nacks, component->out_stats.last_slowlink_time, component->out_stats.sl_nack_period_ts,component->out_stats.sl_nack_recent_cnt);
+                                UpdateSendCsvData(ntohs(header->seq_number), ntohl(header->timestamp), header->markerbit, sent, component->in_stats.video_packets, component->in_stats.video_bytes, receive_bytes, receive_when, component->in_stats.video_notified_lastsec? 1 : 0, component->in_stats.video_nacks, component->in_stats.last_slowlink_time, component->in_stats.sl_nack_period_ts,component->in_stats.sl_nack_recent_cnt,      component->out_stats.video_packets, component->out_stats.video_bytes, send_bytes, send_when, component->out_stats.video_notified_lastsec? 1 : 0, component->out_stats.video_nacks, component->out_stats.last_slowlink_time, component->out_stats.sl_nack_period_ts,component->out_stats.sl_nack_recent_cnt);
  
 								if(stream->video_first_ntp_ts == 0) {
 									struct timeval tv;
@@ -3980,7 +3979,7 @@ void *janus_ice_send_thread(void *data) {
 	return NULL;
 }
 
-void janus_ice_relay_rtp(janus_ice_handle *handle, int video, char *buf, int len, gint64 index, uint16_t origin_seq) {
+void janus_ice_relay_rtp(janus_ice_handle *handle, int video, char *buf, int len) {
 	if(!handle || buf == NULL || len < 1)
 		return;
 	if((!video && !janus_flags_is_set(&handle->webrtc_flags, JANUS_ICE_HANDLE_WEBRTC_HAS_AUDIO))
@@ -3994,8 +3993,6 @@ void janus_ice_relay_rtp(janus_ice_handle *handle, int video, char *buf, int len
 	pkt->type = video ? JANUS_ICE_PACKET_VIDEO : JANUS_ICE_PACKET_AUDIO;
 	pkt->control = FALSE;
 	pkt->encrypted = FALSE;
-    pkt->index = index;
-    pkt->origin_seq = origin_seq;
 	if(handle->queued_packets != NULL)
 		g_async_queue_push(handle->queued_packets, pkt);
 }
