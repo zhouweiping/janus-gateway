@@ -3794,7 +3794,7 @@ void *janus_ice_send_thread(void *data) {
 					}
                     else
                     {
-                        JANUS_LOG(LOG_HUGE, "Retransmitting seq.nr csv data retransmit :seq_number = %ld, timestamp = %ld, markerbit=%d\n", ntohs(header->seq_number), ntohl(header->timestamp), header->markerbit);
+           //             JANUS_LOG(LOG_HUGE, "Retransmitting seq.nr csv data retransmit :seq_number = %ld, timestamp = %ld, markerbit=%d\n", ntohs(header->seq_number), ntohl(header->timestamp), header->markerbit);
                         UpdateRetransmitCsvData(ntohs(header->seq_number), ntohl(header->timestamp), header->markerbit, sent);
                     }
 				} else {

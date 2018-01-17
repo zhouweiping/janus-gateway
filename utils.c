@@ -606,7 +606,7 @@ void WriteReceiveData(gint64 seq_number, int origin_seq, gint64 timestamp, int m
     if(hash_csv_content!=NULL)
     {
         gint64 key = origin_seq + timestamp;
-        g_printf("csv data write :key = %ld, %ld_%ld_%d\n", key, origin_seq, timestamp, markerbit);
+//        JANUS_LOG(LOG_HUGE, "csv data write :key = %ld, %ld_%ld_%d\n", key, origin_seq, timestamp, markerbit);
         janus_mutex_lock(&csv_mutex);
         g_hash_table_insert(hash_csv_content, janus_uint64_dup(key), content);
         janus_mutex_unlock(&csv_mutex);
@@ -649,7 +649,7 @@ void UpdateRetransmitCsvData(guint16 origin_seq, guint32 timestamp, int markerbi
     if(hash_csv_content!=NULL)
     {
         gint64 key = origin_seq + timestamp;
-        JANUS_LOG(LOG_HUGE, "csv data update retransmit after:key = %ld\n", key);
+//        JANUS_LOG(LOG_HUGE, "csv data update retransmit after:key = %ld\n", key);
         csv_content *content = g_hash_table_lookup(hash_csv_content, &key);
         if(content == NULL) {
             JANUS_LOG(LOG_HUGE, "csv data retransmit not found key:%ld\n", key);
@@ -671,7 +671,7 @@ void UpdateSendCsvData(guint16 origin_seq, gint64 timestamp, int markerbit, int 
     if(hash_csv_content!=NULL)
     {
         gint64 key = origin_seq + timestamp;
-        g_printf("csv data update send:key = %ld, %ld_%ld_%d\n", key, origin_seq, timestamp, markerbit);
+//        JANUS_LOG(LOG_HUGE, "csv data update send:key = %ld, %ld_%ld_%d\n", key, origin_seq, timestamp, markerbit);
         csv_content *content = g_hash_table_lookup(hash_csv_content, &key);
         if(content == NULL) {
             JANUS_LOG(LOG_HUGE, "csv data send not found key:%ld\n", key);
@@ -714,7 +714,7 @@ static void *write_csv_data_thread(void *data)
     g_printf( "Starting write csv thread\n");
     while(TRUE)
     {
-        sleep(100);
+        sleep(1800);
         WriteFile();
     }
 }
