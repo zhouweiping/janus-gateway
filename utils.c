@@ -610,13 +610,6 @@ void WriteReceiveData(gint64 seq_number, int origin_seq, gint64 timestamp, int m
         janus_mutex_lock(&csv_mutex);
         g_hash_table_insert(hash_csv_content, janus_uint64_dup(key), content);
         janus_mutex_unlock(&csv_mutex);
-        
-        counter++;
-        if(counter>=50)
-        {
-            display_hash_table(hash_csv_content);
-            exit(0);
-        }
     }
 }
 
