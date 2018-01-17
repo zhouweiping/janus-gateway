@@ -288,6 +288,7 @@ typedef struct janus_ice_queued_packet {
 	gboolean control;
 	gboolean encrypted;
     gint64 index;
+    uint16_t origin_seq;
 } janus_ice_queued_packet;
 /* This is a static, fake, message we use as a trigger to send a DTLS alert */
 static janus_ice_queued_packet janus_ice_dtls_alert;
@@ -2309,7 +2310,6 @@ static void janus_ice_cb_nice_recv(NiceAgent *agent, guint stream_id, guint comp
 									if(handle->queued_packets != NULL)
                                     {
 										g_async_queue_push(handle->queued_packets, pkt);
-                                        UpdateRetransmitCsvData(pkt->index, ntohl(rh->timestamp), rh->markerbit);
                                     }
 									break;
 								}
@@ -3793,6 +3793,11 @@ void *janus_ice_send_thread(void *data) {
 					if(sent < pkt->length) {
 						JANUS_LOG(LOG_ERR, "[%"SCNu64"] ... only sent %d bytes? (was %d)\n", handle->handle_id, sent, pkt->length);
 					}
+                    else
+                    {
+                        g_printf("csv data retransmit :key = %ld, origin_seq = %ld, length=%d\n", pkt->index, pkt->origin_seq, sent);
+                        UpdateRetransmitCsvData(pkt->index, pkt->origin_seq, sent);
+                    }
 				} else {
 					/* FIXME Copy in a buffer and fix SSRC */
 					char sbuf[JANUS_BUFSIZE];
@@ -3976,7 +3981,7 @@ void *janus_ice_send_thread(void *data) {
 	return NULL;
 }
 
-void janus_ice_relay_rtp(janus_ice_handle *handle, int video, char *buf, int len, gint64 index) {
+void janus_ice_relay_rtp(janus_ice_handle *handle, int video, char *buf, int len, gint64 index, uint16_t origin_seq) {
 	if(!handle || buf == NULL || len < 1)
 		return;
 	if((!video && !janus_flags_is_set(&handle->webrtc_flags, JANUS_ICE_HANDLE_WEBRTC_HAS_AUDIO))
@@ -3991,6 +3996,7 @@ void janus_ice_relay_rtp(janus_ice_handle *handle, int video, char *buf, int len
 	pkt->control = FALSE;
 	pkt->encrypted = FALSE;
     pkt->index = index;
+    pkt->origin_seq = origin_seq;
 	if(handle->queued_packets != NULL)
 		g_async_queue_push(handle->queued_packets, pkt);
 }

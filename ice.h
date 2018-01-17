@@ -545,7 +545,7 @@ void janus_ice_component_free(GHashTable *container, janus_ice_component *compon
  * @param[in] video Whether this is an audio or a video frame
  * @param[in] buf The packet data (buffer)
  * @param[in] len The buffer lenght */
-void janus_ice_relay_rtp(janus_ice_handle *handle, int video, char *buf, int len, gint64 index);
+void janus_ice_relay_rtp(janus_ice_handle *handle, int video, char *buf, int len, gint64 index, uint16_t origin_seq);
 /*! \brief Gateway RTCP callback, called when a plugin has an RTCP message to send to a peer
  * @param[in] handle The Janus ICE handle associated with the peer
  * @param[in] video Whether this is related to an audio or a video stream

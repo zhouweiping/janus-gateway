@@ -498,12 +498,14 @@ gboolean janus_json_is_valid(json_t *val, json_type jtype, unsigned int flags) {
 
 typedef struct csv_content{
     gint64 seq_number;  //视频数据包的序列号 从1递增
+    int origin_seq;
     gint64 timestamp;   //视频数据包的时间戳
     int markerbit;      //帧的结束标志  1--标识该帧结束   0--同一帧的数据
     int receive_length; //接收数据长度
     int isSend;         //该数据包是否发送成功  1---标识发送成功   0-标识未发送
     int send_length;    //ice对该数据包成功发送的长度
     int isRetransmit;   //ice是否重发该数据包  1---重发了   0-未重发
+    int retransmit_length;    //ice对该数据包成功发送的长度
     
     //ice 接收统计信息  忽略音频数据
     guint32 receive_video_packets;      //ice总共接收到的视频包的个数
@@ -534,6 +536,7 @@ typedef struct csv_content{
 static GHashTable *hash_csv_content = NULL;
 static void *write_csv_data_thread(void *data);
 static janus_mutex csv_mutex;
+static int counter = 0;
 
 void display_hash_table(GHashTable *table)
 {
@@ -573,7 +576,7 @@ void InitialHash()
         return;
     }
     
-    fprintf(file, "seq_number,timestamp,markerbit,receive_length,isSend,send_length,isRetransmit,receive_video_packets,receive_video_bytes,receive_bytes,receive_when,receive_video_notified_lastsec,receive_video_nacks,receive_last_slowlink_time,receive_sl_nack_period_ts,receive_sl_nack_recent_cnt,send_video_packets,send_video_bytes,send_bytes,send_when,send_video_notified_lastsec,send_video_nacks,send_last_slowlink_time,send_sl_nack_period_ts,send_sl_nack_recent_cnt\n");
+    fprintf(file, "seq_number,origin_seq,timestamp,markerbit,receive_length,isSend,send_length,isRetransmit,retransmit_length,receive_video_packets,receive_video_bytes,receive_bytes,receive_when,receive_video_notified_lastsec,receive_video_nacks,receive_last_slowlink_time,receive_sl_nack_period_ts,receive_sl_nack_recent_cnt,send_video_packets,send_video_bytes,send_bytes,send_when,send_video_notified_lastsec,send_video_nacks,send_last_slowlink_time,send_sl_nack_period_ts,send_sl_nack_recent_cnt\n");
     
     fclose(file);
     
@@ -585,19 +588,21 @@ void InitialHash()
     }
 }
 
-void WriteReceiveData(gint64 seq_number, gint64 timestamp, int markerbit, int length)
+void WriteReceiveData(gint64 seq_number, int origin_seq, gint64 timestamp, int markerbit, int length)
 {
     csv_content *content = g_malloc0(sizeof(csv_content));
     content->seq_number = seq_number;
+    content->origin_seq = origin_seq;
     content->timestamp = timestamp;
     content->markerbit = markerbit;
     content->receive_length = length;
     content->isSend = 0;
     content->isRetransmit = 0;
+    content->retransmit_length = 0;
     
     if(hash_csv_content!=NULL)
     {
- //       g_printf("csv data :key = %ld, %ld_%ld_%d_%d\n", seq_number, seq_number, timestamp, markerbit, length);
+        g_printf("csv data :key = %ld, %ld_%ld_%d_%d\n", seq_number, origin_seq, timestamp, markerbit, length);
         janus_mutex_lock(&csv_mutex);
         g_hash_table_insert(hash_csv_content, janus_uint64_dup(seq_number), content);
         janus_mutex_unlock(&csv_mutex);
@@ -626,9 +631,7 @@ void WriteFile()
             continue;
         }
         
-        fprintf(file, "%ld,%ld,%d,%d,%d,%d,%d,%d,%ld,%ld,%ld,%d,%d,%ld,%ld,%d,%d,%ld,%ld,%ld,%d,%d,%ld,%ld,%d\n", content->seq_number, content->timestamp, content->markerbit, content->receive_length, content->isSend, content->send_length, content->isRetransmit, content->receive_video_packets, content->receive_video_bytes , content->receive_bytes, content->receive_when, content->receive_video_notified_lastsec, content->receive_video_nacks, content->receive_last_slowlink_time, content->receive_sl_nack_period_ts,
-                content->receive_sl_nack_recent_cnt, content->send_video_packets, content->send_video_bytes, content->send_bytes, content->send_when, content->send_video_notified_lastsec, content->send_video_nacks,
-                content->send_last_slowlink_time, content->send_sl_nack_period_ts, content->send_sl_nack_recent_cnt);
+        fprintf(file, "%ld,%ld,%ld,%d,%d,%d,%d,%d,%d,%d,%ld,%ld,%ld,%d,%d,%ld,%ld,%d,%d,%ld,%ld,%ld,%d,%d,%ld,%ld,%d\n", content->seq_number, content->origin_seq, content->timestamp, content->markerbit, content->receive_length, content->isSend, content->send_length, content->isRetransmit, content->retransmit_length,  content->receive_video_packets, content->receive_video_bytes, content->receive_bytes, content->receive_when, content->receive_video_notified_lastsec, content->receive_video_nacks, content->receive_last_slowlink_time, content->receive_sl_nack_period_ts, content->receive_sl_nack_recent_cnt, content->send_video_packets, content->send_video_bytes, content->send_bytes, content->send_when, content->send_video_notified_lastsec, content->send_video_nacks, content->send_last_slowlink_time, content->send_sl_nack_period_ts, content->send_sl_nack_recent_cnt);
 
         g_free(content);
         g_hash_table_iter_remove(&iter);
@@ -636,6 +639,27 @@ void WriteFile()
     janus_mutex_unlock(&csv_mutex);
     fclose(file);
 }
+
+void UpdateRetransmitCsvData(gint64 seq_number, int origin_seq, int retransmit_length)
+{
+    if(hash_csv_content!=NULL)
+    {
+        g_printf("csv data retransmit after:key = %ld, origin_seq = %ld\n", seq_number, origin_seq);
+        csv_content *content = g_hash_table_lookup(hash_csv_content, &seq_number);
+        if(content == NULL) {
+            g_printf("csv data retransmit found key:%ld_%ld\n", seq_number, origin_seq);
+            return;
+        }
+        
+        content->isRetransmit = 1;
+        content->retransmit_length = retransmit_length;
+        janus_mutex_lock(&csv_mutex);
+        g_hash_table_replace(hash_csv_content, janus_uint64_dup(seq_number), content);
+        janus_mutex_unlock(&csv_mutex);
+        
+    }
+}
+
 
 
 void UpdateSendCsvData(gint64 seq_number, gint64 timestamp, int markerbit, int length, guint32 receive_video_packets, guint64 receive_video_bytes, guint64 receive_bytes, gint64 receive_when, int receive_video_notified_lastsec, guint32 receive_video_nacks, gint64 receive_last_slowlink_time, gint64 receive_sl_nack_period_ts, guint receive_sl_nack_recent_cnt, guint32 send_video_packets, guint64 send_video_bytes, guint64 send_bytes, gint64 send_when, int send_video_notified_lastsec, guint32 send_video_nacks, gint64 send_last_slowlink_time, gint64 send_sl_nack_period_ts, guint send_sl_nack_recent_cnt)
@@ -677,23 +701,6 @@ void UpdateSendCsvData(gint64 seq_number, gint64 timestamp, int markerbit, int l
     }
 }
 
-void UpdateRetransmitCsvData(gint64 seq_number, gint64 timestamp, int markerbit)
-{
-    if(hash_csv_content!=NULL)
-    {
-//        g_printf("csv data update:key = %ld, %ld_%ld_%d\n", seq_number, seq_number, timestamp, markerbit);
-        csv_content *content = g_hash_table_lookup(hash_csv_content, &seq_number);
-        if(content == NULL) {
-            g_printf("csv data retransmit found key:%ld_%ld_%d\n", seq_number, timestamp, markerbit);
-            return;
-        }
-        
-        content->isRetransmit = 1;
-        janus_mutex_lock(&csv_mutex);
-        g_hash_table_replace(hash_csv_content, janus_uint64_dup(seq_number), content);
-        janus_mutex_unlock(&csv_mutex);
-    }
-}
 
 
 static void *write_csv_data_thread(void *data)
@@ -701,7 +708,7 @@ static void *write_csv_data_thread(void *data)
     g_printf( "Starting write csv thread\n");
     while(TRUE)
     {
-        sleep(1800);
+        sleep(300);
         WriteFile();
     }
 }

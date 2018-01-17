@@ -344,7 +344,7 @@ struct janus_callbacks {
 	 * @param[in] video Whether this is an audio or a video frame
 	 * @param[in] buf The packet data (buffer)
 	 * @param[in] len The buffer lenght */
-	void (* const relay_rtp)(janus_plugin_session *handle, int video, char *buf, int len, gint64 index);
+	void (* const relay_rtp)(janus_plugin_session *handle, int video, char *buf, int len, gint64 index, uint16_t origin_seq);
 	/*! \brief Callback to relay RTCP messages to a peer
 	 * @param[in] handle The plugin/gateway session that will be used for this peer
 	 * @param[in] video Whether this is related to an audio or a video stream
