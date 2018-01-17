@@ -644,7 +644,7 @@ void UpdateRetransmitCsvData(gint64 seq_number, int origin_seq, int retransmit_l
 {
     if(hash_csv_content!=NULL)
     {
-        g_printf("csv data retransmit after:key = %ld, origin_seq = %ld\n", seq_number, origin_seq);
+        JANUS_LOG(LOG_HUGE, "csv data retransmit after:key = %ld, origin_seq = %ld\n", seq_number, origin_seq);
         csv_content *content = g_hash_table_lookup(hash_csv_content, &seq_number);
         if(content == NULL) {
             g_printf("csv data retransmit found key:%ld_%ld\n", seq_number, origin_seq);
@@ -668,7 +668,7 @@ void UpdateSendCsvData(gint64 seq_number, gint64 timestamp, int markerbit, int l
     {
         csv_content *content = g_hash_table_lookup(hash_csv_content, &seq_number);
         if(content == NULL) {
-            g_printf("csv data send not found key:%ld\n", seq_number);
+            JANUS_LOG(LOG_HUGE, "csv data send not found key:%ld\n", seq_number);
             return;
         }
         content->send_length = length;

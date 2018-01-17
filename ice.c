@@ -3795,7 +3795,7 @@ void *janus_ice_send_thread(void *data) {
 					}
                     else
                     {
-                        g_printf("csv data retransmit :key = %ld, origin_seq = %ld, length=%d\n", pkt->index, pkt->origin_seq, sent);
+                        JANUS_LOG(LOG_HUGE, "csv data retransmit :seq_number = %ld, timestamp = %ld, markerbit=%d\n", ntohs(header->seq_number), ntohl(header->timestamp), header->markerbit);
                         UpdateRetransmitCsvData(pkt->index, pkt->origin_seq, sent);
                     }
 				} else {
@@ -3882,7 +3882,6 @@ void *janus_ice_send_thread(void *data) {
                                     {
                                         send_bytes = 0;
                                         send_when = 0;
-                                    
                                     }
                                 }
                                 else
