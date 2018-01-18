@@ -606,7 +606,7 @@ void WriteReceiveData(gint64 seq_number, int origin_seq, gint64 timestamp, int m
     if(hash_csv_content!=NULL)
     {
         gint64 key = origin_seq + timestamp;
-//        JANUS_LOG(LOG_HUGE, "csv data write :key = %ld, %ld_%ld_%d\n", key, origin_seq, timestamp, markerbit);
+        JANUS_LOG(LOG_HUGE, "csv data write :key = %ld, %ld_%ld_%d\n", key, origin_seq, timestamp, markerbit);
         janus_mutex_lock(&csv_mutex);
         g_hash_table_insert(hash_csv_content, janus_uint64_dup(key), content);
         janus_mutex_unlock(&csv_mutex);
