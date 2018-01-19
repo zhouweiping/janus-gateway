@@ -163,6 +163,7 @@ rtspiface = network interface IP address or device name to listen on when receiv
 #define JANUS_STREAMING_AUTHOR			"Meetecho s.r.l."
 #define JANUS_STREAMING_PACKAGE			"janus.plugin.streaming"
 #define PING_PTYPE 250
+#define NACK_RB_SIZE (2048)
 
 /* Plugin methods */
 janus_plugin *create(void);
@@ -443,6 +444,8 @@ typedef struct janus_streaming_mountpoint {
 	GList/*<unowned janus_streaming_session>*/ *listeners;
 	gint64 destroyed;
 	janus_mutex mutex;
+    GList *received_sequence_list;
+    gint64 last_check_timestamp;
 } janus_streaming_mountpoint;
 GHashTable *mountpoints;
 static GList *old_mountpoints;
@@ -3793,6 +3796,176 @@ static void *janus_streaming_filesource_thread(void *data) {
 	g_thread_unref(g_thread_self());
 	return NULL;
 }
+
+
+static gint sort(gconstpointer p1, gconstpointer p2)//排序函数，正向排序
+{
+    guint a, b;
+    
+    a = GPOINTER_TO_UINT(p1);
+    b = GPOINTER_TO_UINT(p2);
+    
+    return (a > b ? +1 : a == b ? 0 : -1);
+}
+
+/*
+ * Wrapper for notification_cmp to match glib's
+ * compare functions signature.
+ */
+static int packet_timestamp_cmp_data(const void *va, const void *vb, void *data)
+{
+    return packet_timestamp_cmp(va, vb);
+}
+
+static int _write_rtp_header(uint8_t *buf, size_t len, uint8_t ptype, uint16_t seq_num, uint32_t timestamp, uint32_t ssrc) {
+    uint32_t rtp_header;
+    
+    if (12 > len) {
+        return -1;
+    }
+    
+    //TODO need to worry about alignment on some platforms
+    uint32_t *out_header = (uint32_t *)buf;
+    
+    rtp_header = htonl((2 << 30) |(1<<24) |(ptype << 16) | seq_num);
+    
+    *out_header++ = rtp_header;
+    rtp_header = htonl((uint32_t)timestamp); //此处为ssrcSender
+    *out_header++ = rtp_header;
+    rtp_header = htonl(ssrc);//ssrcMedia
+    *out_header++ = rtp_header;
+    
+    
+    int version, padding, feedbackType, length, ssrcSender, ssrcMedia;
+    uint16_t snBase, blp, sn;
+    
+    /*extract rtp header 这一对16位*/
+    version = (buf[0] >> 6) & 0x3;
+    padding = (buf[0] >> 5) & 0x1;
+    feedbackType = buf[0] & 0x1F;
+    ptype = buf[1];
+    
+    if (feedbackType == 1 && ptype == 205) {
+        
+        length = ntohs(*((uint16_t*)(buf + 2)));//长度信息占16位，长度信息为字节数,相当于seq_num
+        
+        
+        ssrcSender = ntohl(*((uint32_t*)(buf + 4)));
+        ssrcMedia = ntohl(*((uint32_t*)(buf + 8)));
+        uint16_t *p = (uint16_t *)(buf + 12);
+        
+        int fci;
+        printf("收到的序列+++\n");
+        for (fci = 0; fci < (length - 2); fci++) {
+            //request the first sequence number
+            snBase = ntohs(*p++);
+            printf("%d,",snBase);
+            blp = ntohs(*p++);
+            if (blp) {
+                int i;
+                for (i = 0; i < 16; i++) {
+                    if ((blp & (1 << i)) != 0) {
+                        sn = snBase + i + 1;
+                        printf("%d,", sn);
+                    }
+                }
+            }
+        }
+        printf("结束+++\n");
+        
+    }
+    //printf( "%d,%d,%d\n",feedbackType,ptype,length);
+    
+    return (int)((uint8_t*)out_header - buf);
+}
+
+void send_resend_sequeces_packet(uint8_t *buf, size_t len,int socket,const struct sockaddr * remote){
+    //采用socket发数据包
+    ssize_t tx_len=0;
+    if ((tx_len = sendto(socket, buf, len, 0, remote, sizeof(struct sockaddr_in))) == -1)
+    {
+        JANUS_LOG(LOG_ERR, "sendto() failed with error: %s", strerror(errno));
+    }
+}
+
+
+
+//
+static void update_current_received_seq_list(janus_streaming_mountpoint *mountpoint,gint64 rtt,uint16_t new_seq_num, uint32_t ssrc,int socket,const struct sockaddr * remote){
+    //插入新的数据
+    
+    mountpoint->received_sequence_list=g_list_append(mountpoint->received_sequence_list, GUINT_TO_POINTER(new_seq_num));
+    if (g_list_length(mountpoint->received_sequence_list)>NACK_RB_SIZE) {
+        mountpoint->received_sequence_list=g_list_sort(mountpoint->received_sequence_list, (GCompareFunc)sort);
+        
+        mountpoint->received_sequence_list=g_list_delete_link(mountpoint->received_sequence_list,
+                                                              g_list_first(mountpoint->received_sequence_list));
+    }
+    gint64 now = janus_get_monotonic_time();
+    if ((now-mountpoint->last_check_timestamp)>rtt) {
+        uint16_t packet[NACK_RB_SIZE*2+6]={0} ;
+        uint16_t *p=(uint16_t *)packet;
+        p+=6;//偏移12个字节
+        
+        //排查缺失的序列
+        uint16_t length=0;
+        gboolean bfirst=TRUE;
+        uint16_t snBase=0;
+        uint16_t blp=0;
+        /* 遍历链表 */
+        printf("缺失的+++\n");
+        mountpoint->received_sequence_list=g_list_sort(mountpoint->received_sequence_list, (GCompareFunc)sort);
+        for (GList *it =mountpoint->received_sequence_list; it; it = it->next) {
+            if (it->next!=NULL&&length<NACK_RB_SIZE) {
+                
+                uint16_t next=GPOINTER_TO_UINT(it->next->data);
+                uint16_t cur=GPOINTER_TO_UINT(it->data);
+                
+                if (cur+1<next) {
+                    //printf("%d,%d,%d,%d\n",cur,next,snBase,length);
+                    //每4个字节为一组
+                    
+                    for (uint16_t i=cur+1; i<next; i++) {
+                        printf("%d,",i);
+                        if (bfirst) {
+                            snBase=i;
+                            blp=0;
+                            *p++=htons(snBase);
+                            bfirst=FALSE;
+                            length++;
+                            continue;
+                        }
+                        uint16_t offset=i-snBase;
+                        if (offset<=16) {
+                            blp|=1<<(offset-1);
+                        }else{
+                            *p++=htons(blp);
+                            blp=0;
+                            snBase=i;
+                            *p++=htons(snBase);
+                            length++;
+                        }
+                    }
+                }
+            }else if(it->next==NULL&&blp>0){//最后一个偏移写入
+                *p++=htons(blp);
+                blp=0;
+            }
+        }
+        printf("\n======\n");
+        if (length>0) {
+            _write_rtp_header((uint8_t *)packet, 12, 205, length+2, 0, ssrc);
+            //发送
+            send_resend_sequeces_packet((uint8_t *)packet, 12+length*4, socket, remote);
+        }
+        //g_free(packet);
+        
+        mountpoint->last_check_timestamp=janus_get_monotonic_time();
+    }
+    
+}
+
+
 
 /* FIXME Test thread to relay RTP frames coming from gstreamer/ffmpeg/others */
 static void *janus_streaming_relay_thread(void *data) {
