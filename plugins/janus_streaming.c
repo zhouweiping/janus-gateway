@@ -3915,7 +3915,8 @@ static void update_current_received_seq_list(janus_streaming_mountpoint *mountpo
         /* 遍历链表 */
         printf("缺失的+++\n");
         mountpoint->received_sequence_list=g_list_sort(mountpoint->received_sequence_list, (GCompareFunc)sort);
-        for (GList *it =mountpoint->received_sequence_list; it; it = it->next) {
+        GList *it;
+        for (it =mountpoint->received_sequence_list; it; it = it->next) {
             if (it->next!=NULL&&length<NACK_RB_SIZE) {
                 
                 uint16_t next=GPOINTER_TO_UINT(it->next->data);
@@ -3924,8 +3925,8 @@ static void update_current_received_seq_list(janus_streaming_mountpoint *mountpo
                 if (cur+1<next) {
                     //printf("%d,%d,%d,%d\n",cur,next,snBase,length);
                     //每4个字节为一组
-                    
-                    for (uint16_t i=cur+1; i<next; i++) {
+                    uint16_t i;
+                    for (i=cur+1; i<next; i++) {
                         printf("%d,",i);
                         if (bfirst) {
                             snBase=i;
